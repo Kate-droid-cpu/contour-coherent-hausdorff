@@ -32,11 +32,10 @@ The expensive iterations are typically the ones that increase the current Hausdo
 The repository also includes interactive HTML visualizations:
 
 
-* [Contour-coherent search](docs/visualizations/contour_coherent_search.html)
-* [Comparing with Brute-force with early break](docs/visualizations/hausdorff_vs_bruteforce.html)
-* [Brute-force with shuffling](docs/visualizations/hausdorff_shuffle_early_stop.html)
-* [KD-tree nearest-neighbor baseline](docs/visualizations/kdtree_contour_build_search.html)
-
+* [Contour-coherent search](https://Kate-droid-cpu.github.io/contour-coherent-hausdorff/visualizations/contour_coherent_search.html)
+* [Comparing with Brute-force with early break](https://Kate-droid-cpu.github.io/contour-coherent-hausdorff/visualizations/hausdorff_vs_bruteforce.html)
+* [Brute-force with shuffling](https://Kate-droid-cpu.github.io/contour-coherent-hausdorff/visualizations/hausdorff_shuffle_early_stop.html)
+* [KD-tree nearest-neighbor baseline](https://Kate-droid-cpu.github.io/contour-coherent-hausdorff/visualizations/kdtree_contour_build_search.html)
 
 
 GitHub may display these HTML files as source code. To view them interactively, open them locally in a browser or publish the `docs/` folder with GitHub Pages.
