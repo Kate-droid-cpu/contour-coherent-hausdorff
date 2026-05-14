@@ -1,0 +1,10 @@
+{
+"dependencies": [
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": ["contrib","jpeg", "png"]
+    },
+	"boost-geometry"
+  ],  "builtin-baseline": "48c52599a9d317673949ed6e7a712c2280d9eceb"
+}

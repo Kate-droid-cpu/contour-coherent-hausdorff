@@ -1,0 +1,192 @@
+
+<div style="padding:1rem 0">
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:1rem">
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.75rem 1rem">
+      <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:2px">Iteration</div>
+      <div id="sit" style="font-size:22px;font-weight:500;color:var(--color-text-primary)">1 / 40</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.75rem 1rem">
+      <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:2px">Checks done</div>
+      <div id="sch" style="font-size:22px;font-weight:500;color:var(--color-text-primary)">0</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.75rem 1rem">
+      <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:2px">Total (always N×M)</div>
+      <div style="font-size:22px;font-weight:500;color:var(--color-text-primary)">1600</div>
+    </div>
+  </div>
+
+  <canvas id="viz" width="660" height="430" style="width:100%;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)"></canvas>
+
+  <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+    <button id="bp" onclick="hToggle()">Play</button>
+    <button onclick="hStep()">Step</button>
+    <button onclick="hPrev()">Back</button>
+    <button onclick="hReset()">Reset</button>
+    <div style="flex:1"></div>
+    <label style="font-size:13px;color:var(--color-text-secondary)">Speed</label>
+    <input type="range" min="1" max="10" value="7" id="spd" style="width:80px">
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:12px;color:var(--color-text-secondary)">
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#D85A30;display:inline-block"></span>Contour 1 (query)</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#378ADD;display:inline-block"></span>Contour 2 (candidates)</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#1D9E75;display:inline-block"></span>Best match</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#9B59B6;display:inline-block"></span>Checking now</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#888;display:inline-block"></span>Already checked</span>
+  </div>
+</div>
+
+<script>
+const cv=document.getElementById('viz');
+const cx=cv.getContext('2d');
+const W=660,H=430,N=40;
+const CX=330,CY=215;
+const PHASE=Math.PI+(8/40)*2*Math.PI;
+
+function makeEll(ox,oy,rx,ry,n,wob,wf,wp,phase){
+  wob=wob||0;wf=wf||3;wp=wp||0;phase=phase||0;
+  return Array.from({length:n},function(_,i){
+    var a=(i/n)*Math.PI*2+phase;
+    var w=1+wob*Math.sin(a*wf+wp);
+    return{x:ox+rx*w*Math.cos(a),y:oy+ry*w*Math.sin(a)};
+  });
+}
+
+var c1=makeEll(CX,CY,128,98,N,0,3,0,PHASE);
+var c2=makeEll(CX+8,CY-6,150,114,N,0.06,3,1.1,PHASE);
+
+function sim(){
+  var fs=[],tot=0;
+  for(var qi=0;qi<N;qi++){
+    var a=c1[qi];
+    var mSq=Infinity,best=-1,chk=[];
+    for(var j=0;j<N;j++){
+      var b=c2[j];
+      var dSq=(a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y);
+      tot++;
+      if(dSq<mSq){mSq=dSq;best=j;}
+      chk.push(j);
+      fs.push({qi:qi,pos:j,best:best,mSq:mSq,tot:tot,chk:chk.slice(),tr:false});
+    }
+    fs.push({qi:qi,pos:-1,best:best,mSq:mSq,tot:tot,chk:chk.slice(),tr:true});
+  }
+  return fs;
+}
+
+var frames=sim();
+var bestByIter={};
+frames.forEach(function(f){if(f.tr)bestByIter[f.qi]=f.best;});
+
+var fi=0,playing=false,tid=null;
+
+function pth(pts){
+  cx.beginPath();cx.moveTo(pts[0].x,pts[0].y);
+  for(var i=1;i<pts.length;i++)cx.lineTo(pts[i].x,pts[i].y);
+  cx.closePath();
+}
+
+function draw(f){
+  var dk=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var tc=dk?'rgba(255,255,255,0.45)':'rgba(0,0,0,0.40)';
+  cx.clearRect(0,0,W,H);
+
+  pth(c1);cx.strokeStyle='rgba(216,90,48,0.35)';cx.lineWidth=1.5;cx.setLineDash([]);cx.stroke();
+  pth(c2);cx.strokeStyle='rgba(55,138,221,0.35)';cx.lineWidth=1.5;cx.stroke();
+
+  for(var i=0;i<f.qi;i++){
+    var b=bestByIter[i];
+    if(b>=0){
+      var aa=c1[i],bb=c2[b];
+      cx.beginPath();cx.moveTo(aa.x,aa.y);cx.lineTo(bb.x,bb.y);
+      cx.strokeStyle='rgba(29,158,117,0.22)';cx.lineWidth=1;cx.setLineDash([]);cx.stroke();
+    }
+  }
+
+  for(var i=0;i<N;i++){
+    var p=c2[i],ci=f.chk.indexOf(i);
+    var col=dk?'#1e4a7a':'#6AAAE0',r=3;
+    if(ci>=0&&i!==f.best&&i!==f.pos){col=dk?'#555':'#999';}
+    if(i===f.best){col='#1D9E75';r=5.5;}
+    if(i===f.pos&&!f.tr){col='#9B59B6';r=5.5;}
+    if(i===0){
+      cx.beginPath();cx.arc(p.x,p.y,9,0,Math.PI*2);
+      cx.strokeStyle='#EF9F27';cx.lineWidth=2;cx.setLineDash([]);cx.stroke();
+    }
+    cx.beginPath();cx.arc(p.x,p.y,r,0,Math.PI*2);cx.fillStyle=col;cx.fill();
+    if(ci>=0){
+      var dx2=p.x-(CX+8),dy2=p.y-(CY-6),len=Math.sqrt(dx2*dx2+dy2*dy2)||1;
+      cx.font='7px monospace';
+      cx.fillStyle=dk?'rgba(255,255,255,0.5)':'rgba(0,0,0,0.42)';
+      cx.textAlign='center';
+      cx.fillText(ci+1,p.x+dx2/len*14,p.y+dy2/len*14);
+    }
+    if(i===0||i===N-1){
+      var dx3=p.x-(CX+8),dy3=p.y-(CY-6),len3=Math.sqrt(dx3*dx3+dy3*dy3)||1;
+      cx.font='8px monospace';cx.fillStyle=tc;cx.textAlign='center';
+      cx.fillText(i,p.x+dx3/len3*20,p.y+dy3/len3*20);
+    }
+  }
+
+  for(var i=0;i<N;i++){
+    var p=c1[i],cur=i===f.qi;
+    var r=cur?7:3;
+    var col=cur?'#D85A30':(i<f.qi?'rgba(180,60,20,0.7)':'rgba(216,90,48,0.25)');
+    cx.beginPath();cx.arc(p.x,p.y,r,0,Math.PI*2);cx.fillStyle=col;cx.fill();
+    if(cur){
+      var dx2=p.x-CX,dy2=p.y-CY,len=Math.sqrt(dx2*dx2+dy2*dy2)||1;
+      cx.font='500 10px monospace';cx.fillStyle='#D85A30';cx.textAlign='center';
+      cx.fillText('a['+f.qi+']',p.x+dx2/len*20,p.y+dy2/len*20);
+    }
+  }
+
+  if(!f.tr){
+    var a=c1[f.qi];
+    if(f.best>=0){
+      cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(c2[f.best].x,c2[f.best].y);
+      cx.strokeStyle='#1D9E75';cx.lineWidth=1.5;cx.setLineDash([]);cx.stroke();
+    }
+    if(f.pos>=0&&f.pos<N&&f.pos!==f.best){
+      cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(c2[f.pos].x,c2[f.pos].y);
+      cx.strokeStyle='rgba(155,89,182,0.5)';cx.lineWidth=1;cx.setLineDash([3,3]);cx.stroke();cx.setLineDash([]);
+    }
+  }
+
+  if(!f.tr&&f.chk.length>0){
+    cx.font='9px monospace';cx.fillStyle=tc;cx.textAlign='center';
+    cx.fillText('scan: 0 → '+Math.min(f.pos,N-1)+'  (always scans all N)',W/2,16);
+  }
+
+  cx.font='10px monospace';cx.fillStyle=tc;cx.textAlign='left';
+  cx.fillText('iter '+(f.qi+1)+'/'+N+'  a['+f.qi+']  scan from 0, no early stop',10,H-10);
+  if(f.mSq<1e15){
+    cx.textAlign='center';
+    cx.fillText('minDist='+Math.sqrt(f.mSq).toFixed(1),W/2,H-10);
+  }
+  if(f.tr){
+    cx.font='10px monospace';cx.fillStyle='#D85A30';cx.textAlign='right';
+    cx.fillText('all '+N+' checked — no shortcut',W-10,H-10);
+  }
+}
+
+function upStats(f){
+  document.getElementById('sit').textContent=(f.qi+1)+' / '+N;
+  document.getElementById('sch').textContent=f.tot;
+}
+
+function render(){if(fi>=frames.length)fi=frames.length-1;if(fi<0)fi=0;draw(frames[fi]);upStats(frames[fi]);}
+function hStep(){if(fi<frames.length-1){fi++;render();}}
+function hPrev(){if(fi>0){fi--;render();}}
+function hReset(){fi=0;playing=false;clearTimeout(tid);document.getElementById('bp').textContent='Play';render();}
+function getDelay(){return 1100-parseInt(document.getElementById('spd').value)*100;}
+function loop(){
+  if(!playing)return;
+  if(fi>=frames.length-1){playing=false;document.getElementById('bp').textContent='Play';return;}
+  fi++;render();tid=setTimeout(loop,getDelay());
+}
+function hToggle(){
+  playing=!playing;
+  document.getElementById('bp').textContent=playing?'Pause':'Play';
+  if(playing)loop();else clearTimeout(tid);
+}
+render();
+</script>

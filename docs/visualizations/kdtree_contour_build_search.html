@@ -1,0 +1,406 @@
+
+<div style="padding:1rem 0;font-family:var(--font-family-sans)">
+  <div style="display:flex;gap:8px;margin-bottom:10px">
+    <button id="btnBuild" onclick="setPhase('build')" style="font-weight:600">① Build</button>
+    <button id="btnSearch" onclick="setPhase('search')">② Search</button>
+    <div style="flex:1"></div>
+    <span id="phaseLabel" style="font-size:12px;color:var(--color-text-secondary);align-self:center">Phase: Build KD-Tree</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.6rem .8rem">
+      <div style="font-size:11px;color:var(--color-text-secondary)">Step</div>
+      <div id="sstep" style="font-size:18px;font-weight:500">0 / 0</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.6rem .8rem">
+      <div style="font-size:11px;color:var(--color-text-secondary)">Split axis</div>
+      <div id="saxis" style="font-size:18px;font-weight:500">—</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.6rem .8rem">
+      <div style="font-size:11px;color:var(--color-text-secondary)">Depth</div>
+      <div id="sdepth" style="font-size:18px;font-weight:500">—</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.6rem .8rem">
+      <div style="font-size:11px;color:var(--color-text-secondary)" id="stat4lbl">Nodes built</div>
+      <div id="sstat4" style="font-size:18px;font-weight:500">0</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:8px">
+    <canvas id="cvSpace" width="390" height="390" style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)"></canvas>
+    <canvas id="cvTree"  width="250" height="390" style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)"></canvas>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+    <button id="bp" onclick="hToggle()">Play</button>
+    <button onclick="hStep()">Step</button>
+    <button onclick="hPrev()">Back</button>
+    <button onclick="hReset()">Reset</button>
+    <div style="flex:1"></div>
+    <label style="font-size:13px;color:var(--color-text-secondary)">Speed</label>
+    <input type="range" min="1" max="8" value="3" id="spd" style="width:80px">
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:12px;color:var(--color-text-secondary)">
+    <span><span style="display:inline-block;width:12px;height:3px;background:#378ADD;vertical-align:middle;border-radius:2px"></span> Split X</span>
+    <span><span style="display:inline-block;width:12px;height:3px;background:#D85A30;vertical-align:middle;border-radius:2px"></span> Split Y</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#EF9F27;vertical-align:middle"></span> Pivot (median)</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#1D9E75;vertical-align:middle"></span> Placed / Best</span>
+    <span id="leg2" style="display:none"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#9B59B6;vertical-align:middle"></span> Pruned region</span>
+    <span id="leg3" style="display:none"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#D85A30;vertical-align:middle"></span> Query point</span>
+  </div>
+
+  <div id="descBox" style="margin-top:8px;font-size:12px;color:var(--color-text-secondary);min-height:18px"></div>
+</div>
+
+<script>
+// ── Contour ──────────────────────────────────────────────────────────────────
+const N=40, CX2=195, CY2=195, PHASE=Math.PI+(8/40)*2*Math.PI;
+function makeEll(ox,oy,rx,ry,n,wob,wf,wp,phase){
+  wob=wob||0;wf=wf||3;wp=wp||0;phase=phase||0;
+  return Array.from({length:n},(_,i)=>{
+    const a=(i/n)*Math.PI*2+phase, w=1+wob*Math.sin(a*wf+wp);
+    return{x:ox+rx*w*Math.cos(a), y:oy+ry*w*Math.sin(a)};
+  });
+}
+const c2pts = makeEll(CX2,CY2,148,112,N,0.06,3,1.1,PHASE);
+const c1pts = makeEll(CX2-6,CY2+4,126,96,N,0,3,0,PHASE);
+
+// ── KD-Tree Build ────────────────────────────────────────────────────────────
+let buildSteps=[], treeNodes=[], nodeId=0;
+function build(indices, xmin,ymin,xmax,ymax, depth, parentId, side){
+  if(!indices.length) return null;
+  const axis=depth%2;
+  const sorted=[...indices].sort((a,b)=>axis===0?c2pts[a].x-c2pts[b].x:c2pts[a].y-c2pts[b].y);
+  const mid=Math.floor(sorted.length/2);
+  const pivot=sorted[mid];
+  const id=nodeId++;
+  treeNodes.push({id,pivot,axis,depth,parentId,side,left:null,right:null,
+    region:{xmin,ymin,xmax,ymax}});
+  const placedSoFar=treeNodes.slice(0,-1).map(n=>n.pivot);
+  buildSteps.push({id,pivot,axis,depth,region:{xmin,ymin,xmax,ymax},
+    remaining:sorted.filter(i=>i!==pivot), placed:[...placedSoFar]});
+  const sv=axis===0?c2pts[pivot].x:c2pts[pivot].y;
+  const lId=build(sorted.slice(0,mid), xmin,ymin,
+    axis===0?sv:xmax, axis===1?sv:ymax, depth+1,id,'left');
+  const rId=build(sorted.slice(mid+1),
+    axis===0?sv:xmin, axis===1?sv:ymin,
+    xmax,ymax, depth+1,id,'right');
+  treeNodes[id].left=lId; treeNodes[id].right=rId;
+  return id;
+}
+const minX=Math.min(...c2pts.map(p=>p.x))-10;
+const maxX=Math.max(...c2pts.map(p=>p.x))+10;
+const minY=Math.min(...c2pts.map(p=>p.y))-10;
+const maxY=Math.max(...c2pts.map(p=>p.y))+10;
+build(Array.from({length:N},(_,i)=>i), minX,minY,maxX,maxY, 0,null,null);
+
+// ── Tree layout ──────────────────────────────────────────────────────────────
+function layoutTree(){
+  const TW=250,TH=380,pad=12;
+  const byDepth={};
+  treeNodes.forEach(n=>{(byDepth[n.depth]||(byDepth[n.depth]=[])).push(n.id);});
+  const maxD=Math.max(...treeNodes.map(n=>n.depth));
+  treeNodes.forEach(n=>{
+    const lvl=byDepth[n.depth], idx=lvl.indexOf(n.id);
+    n.ty=pad+20+n.depth*(TH-2*pad-20)/(maxD||1);
+    n.tx=pad+(idx+0.5)*(TW-2*pad)/lvl.length;
+  });
+}
+layoutTree();
+
+// ── KD Search ────────────────────────────────────────────────────────────────
+let searchSteps=[];
+function buildSearch(queryIdx){
+  searchSteps=[];
+  const q=c1pts[queryIdx];
+  let bestDist=Infinity, bestPt=-1;
+  function searchNode(id){
+    if(id===null)return;
+    const node=treeNodes[id];
+    const p=c2pts[node.pivot];
+    const d=Math.sqrt((q.x-p.x)**2+(q.y-p.y)**2);
+    const improved=d<bestDist;
+    if(improved){bestDist=d;bestPt=node.pivot;}
+    searchSteps.push({type:'visit',nodeId:id,queryIdx,bestPt,bestDist,improved});
+    const axis=node.axis;
+    const diff=axis===0?q.x-p.x:q.y-p.y;
+    const first=diff>=0?node.right:node.left;
+    const second=diff>=0?node.left:node.right;
+    searchNode(first);
+    // check if we need to explore other side
+    const planeDist=Math.abs(diff);
+    if(planeDist<bestDist){
+      searchSteps.push({type:'explore',nodeId:second,queryIdx,bestPt,bestDist,planeDist});
+      searchNode(second);
+    } else {
+      searchSteps.push({type:'prune',nodeId:second,queryIdx,bestPt,bestDist,planeDist});
+    }
+  }
+  searchNode(0);
+  searchSteps.push({type:'done',queryIdx,bestPt,bestDist});
+}
+buildSearch(5); // default query = c1[5]
+
+// ── Canvas & drawing ─────────────────────────────────────────────────────────
+const cvS=document.getElementById('cvSpace'), cxS=cvS.getContext('2d');
+const cvT=document.getElementById('cvTree'),  cxT=cvT.getContext('2d');
+const SW=390,SH=390,TW=250,TH=390;
+const SPAD=22;
+function sc(px,py){
+  return{x:SPAD+(px-minX)/(maxX-minX)*(SW-2*SPAD),
+         y:SPAD+(py-minY)/(maxY-minY)*(SH-2*SPAD)};
+}
+
+const AXCOL=['#378ADD','#D85A30'];
+const DEPTHALPHA=[1,0.75,0.55,0.4,0.28,0.2];
+
+function drawSpace(phase, fi){
+  const dk=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const tc=dk?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.35)';
+  cxS.clearRect(0,0,SW,SH);
+
+  if(phase==='build'){
+    const s=buildSteps[fi];
+    // all past splits
+    for(let k=0;k<=fi;k++){
+      const sk=buildSteps[k];
+      const r=sk.region, p=c2pts[sk.pivot];
+      const al=DEPTHALPHA[sk.depth]||0.15;
+      cxS.beginPath();
+      cxS.strokeStyle=AXCOL[sk.axis];
+      cxS.lineWidth=k===fi?2:1;
+      cxS.globalAlpha=k===fi?1:al;
+      if(sk.axis===0){const a=sc(p.x,r.ymin),b=sc(p.x,r.ymax);cxS.moveTo(a.x,a.y);cxS.lineTo(b.x,b.y);}
+      else           {const a=sc(r.xmin,p.y),b=sc(r.xmax,p.y);cxS.moveTo(a.x,a.y);cxS.lineTo(b.x,b.y);}
+      cxS.setLineDash([]);cxS.stroke();cxS.globalAlpha=1;
+    }
+    // current region box
+    const r=s.region, ra=sc(r.xmin,r.ymin),rb=sc(r.xmax,r.ymax);
+    cxS.beginPath();cxS.rect(ra.x,ra.y,rb.x-ra.x,rb.y-ra.y);
+    cxS.strokeStyle=AXCOL[s.axis];cxS.lineWidth=1.5;cxS.setLineDash([4,3]);cxS.stroke();cxS.setLineDash([]);
+    // c2 points
+    for(let i=0;i<N;i++){
+      const p=c2pts[i],sp=sc(p.x,p.y);
+      const placed=s.placed.indexOf(i)>=0, isPivot=i===s.pivot;
+      const inRegion=s.remaining.indexOf(i)>=0;
+      let col=dk?'#1e4a7a':'#6AAAE0', r2=3;
+      if(placed){col='#1D9E75';r2=4.5;}
+      if(isPivot){col='#EF9F27';r2=7;}
+      if(!placed&&!isPivot&&!inRegion){col=dk?'#333':'#ccc';r2=2.5;}
+      cxS.beginPath();cxS.arc(sp.x,sp.y,r2,0,Math.PI*2);cxS.fillStyle=col;cxS.fill();
+      if(isPivot){cxS.font='bold 8px monospace';cxS.fillStyle='#000';cxS.textAlign='center';cxS.fillText(i,sp.x,sp.y+3);}
+    }
+    // label
+    const piv=c2pts[s.pivot],sp=sc(piv.x,piv.y);
+    cxS.font='10px monospace';cxS.fillStyle=AXCOL[s.axis];cxS.textAlign='left';
+    cxS.fillText('split '+(s.axis===0?'X':'Y')+' median='+s.pivot,6,SH-6);
+
+  } else {
+    // search phase — draw all split lines (complete tree)
+    treeNodes.forEach(n=>{
+      const r=n.region,p=c2pts[n.pivot];
+      const al=DEPTHALPHA[n.depth]||0.12;
+      cxS.beginPath();cxS.strokeStyle=AXCOL[n.axis];cxS.lineWidth=1;cxS.globalAlpha=al;
+      if(n.axis===0){const a=sc(p.x,r.ymin),b=sc(p.x,r.ymax);cxS.moveTo(a.x,a.y);cxS.lineTo(b.x,b.y);}
+      else          {const a=sc(r.xmin,p.y),b=sc(r.xmax,p.y);cxS.moveTo(a.x,a.y);cxS.lineTo(b.x,b.y);}
+      cxS.setLineDash([]);cxS.stroke();cxS.globalAlpha=1;
+    });
+
+    const s=searchSteps[fi];
+    if(!s)return;
+    const q=c1pts[s.queryIdx];
+
+    // visited/pruned so far
+    const visited=new Set(), pruned=new Set();
+    for(let k=0;k<=fi;k++){
+      const sk=searchSteps[k];
+      if(sk.type==='visit'&&sk.nodeId!==null)visited.add(sk.nodeId);
+      if(sk.type==='prune'&&sk.nodeId!==null)pruned.add(sk.nodeId);
+    }
+
+    // highlight pruned regions
+    pruned.forEach(nid=>{
+      if(nid===null||nid===undefined)return;
+      const node=treeNodes[nid];if(!node)return;
+      const r=node.region,ra=sc(r.xmin,r.ymin),rb=sc(r.xmax,r.ymax);
+      cxS.fillStyle='rgba(155,89,182,0.08)';
+      cxS.fillRect(ra.x,ra.y,rb.x-ra.x,rb.y-ra.y);
+    });
+
+    // best distance circle
+    if(s.bestDist<Infinity){
+      const sq=sc(q.x,q.y);
+      const rx=s.bestDist/(maxX-minX)*(SW-2*SPAD);
+      cxS.beginPath();cxS.arc(sq.x,sq.y,rx,0,Math.PI*2);
+      cxS.strokeStyle='rgba(29,158,117,0.35)';cxS.lineWidth=1;cxS.setLineDash([3,3]);cxS.stroke();cxS.setLineDash([]);
+    }
+
+    // c2 points
+    for(let i=0;i<N;i++){
+      const p=c2pts[i],sp=sc(p.x,p.y);
+      const inVisited=[...visited].some(nid=>treeNodes[nid]&&treeNodes[nid].pivot===i);
+      let col=dk?'#1e4a7a':'#85B7EB', r2=3;
+      if(inVisited)col=dk?'#3a7ab8':'#378ADD';
+      if(s.bestPt===i){col='#1D9E75';r2=6;}
+      if(s.type==='visit'&&s.nodeId!==null&&treeNodes[s.nodeId]&&treeNodes[s.nodeId].pivot===i){col='#EF9F27';r2=6;}
+      cxS.beginPath();cxS.arc(sp.x,sp.y,r2,0,Math.PI*2);cxS.fillStyle=col;cxS.fill();
+    }
+
+    // query point (c1)
+    const sq=sc(q.x,q.y);
+    cxS.beginPath();cxS.arc(sq.x,sq.y,7,0,Math.PI*2);cxS.fillStyle='#D85A30';cxS.fill();
+    cxS.font='bold 8px monospace';cxS.fillStyle='#fff';cxS.textAlign='center';cxS.fillText('q',sq.x,sq.y+3);
+
+    // line to best
+    if(s.bestPt>=0){
+      const sb=sc(c2pts[s.bestPt].x,c2pts[s.bestPt].y);
+      cxS.beginPath();cxS.moveTo(sq.x,sq.y);cxS.lineTo(sb.x,sb.y);
+      cxS.strokeStyle='#1D9E75';cxS.lineWidth=1.5;cxS.setLineDash([]);cxS.stroke();
+    }
+
+    // line to current
+    if(s.type==='visit'&&s.nodeId!==null){
+      const node=treeNodes[s.nodeId];
+      if(node){
+        const sc2=sc(c2pts[node.pivot].x,c2pts[node.pivot].y);
+        cxS.beginPath();cxS.moveTo(sq.x,sq.y);cxS.lineTo(sc2.x,sc2.y);
+        cxS.strokeStyle='rgba(239,159,39,0.5)';cxS.lineWidth=1;cxS.setLineDash([3,3]);cxS.stroke();cxS.setLineDash([]);
+      }
+    }
+
+    cxS.font='10px monospace';cxS.fillStyle=tc;cxS.textAlign='left';
+    let desc='';
+    if(s.type==='visit')desc='Visiting node '+s.nodeId+' (pt '+treeNodes[s.nodeId]?.pivot+')';
+    else if(s.type==='prune')desc='Pruned subtree — plane dist='+s.planeDist?.toFixed(1)+' ≥ best='+s.bestDist?.toFixed(1);
+    else if(s.type==='explore')desc='Must explore — plane dist='+s.planeDist?.toFixed(1)+' < best='+s.bestDist?.toFixed(1);
+    else if(s.type==='done')desc='Done — nearest: pt '+s.bestPt+', dist='+s.bestDist?.toFixed(2);
+    cxS.fillText(desc,6,SH-6);
+  }
+}
+
+function drawTree(phase, fi){
+  const dk=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const tc=dk?'rgba(255,255,255,0.35)':'rgba(0,0,0,0.3)';
+  cxT.clearRect(0,0,TW,TH);
+
+  let placedSet=new Set(), currentId=null, prunedSet=new Set(), visitedSet=new Set();
+
+  if(phase==='build'){
+    const s=buildSteps[fi];
+    s.placed.forEach(i=>placedSet.add(treeNodes.find(n=>n.pivot===i)?.id));
+    currentId=s.id;
+    placedSet.add(currentId);
+  } else {
+    treeNodes.forEach(n=>placedSet.add(n.id));
+    for(let k=0;k<=fi;k++){
+      const sk=searchSteps[k];
+      if(sk.type==='visit'&&sk.nodeId!==null)visitedSet.add(sk.nodeId);
+      if(sk.type==='prune'&&sk.nodeId!==null)prunedSet.add(sk.nodeId);
+      if(sk.type==='visit')currentId=sk.nodeId;
+    }
+  }
+
+  // edges
+  treeNodes.forEach(n=>{
+    if(!placedSet.has(n.id))return;
+    if(n.parentId===null)return;
+    cxT.beginPath();cxT.moveTo(treeNodes[n.parentId].tx,treeNodes[n.parentId].ty);
+    cxT.lineTo(n.tx,n.ty);
+    cxT.strokeStyle=dk?'rgba(255,255,255,0.18)':'rgba(0,0,0,0.13)';
+    cxT.lineWidth=1;cxT.stroke();
+  });
+
+  // nodes
+  treeNodes.forEach(n=>{
+    if(!placedSet.has(n.id))return;
+    const isCur=n.id===currentId;
+    const isPruned=prunedSet.has(n.id);
+    const isVisited=visitedSet.has(n.id);
+    let col=AXCOL[n.axis],r=5;
+    if(phase==='build'){
+      if(isCur){col='#EF9F27';r=8;}
+      else if(!placedSet.has(n.id))col=dk?'#333':'#ddd';
+    } else {
+      col=dk?'#2a4a2a':'#9bcfb8';
+      if(isVisited)col=AXCOL[n.axis];
+      if(isPruned){col='#9B59B6';r=5;}
+      if(isCur){col='#EF9F27';r=8;}
+    }
+    cxT.beginPath();cxT.arc(n.tx,n.ty,r,0,Math.PI*2);cxT.fillStyle=col;cxT.fill();
+    cxT.font=(r>5?'bold ':'')+' 7px monospace';
+    cxT.fillStyle=r>5?'#000':'#fff';
+    cxT.textAlign='center';
+    cxT.fillText(n.pivot,n.tx,n.ty+2.5);
+  });
+
+  cxT.font='10px monospace';cxT.fillStyle=tc;cxT.textAlign='center';
+  cxT.fillText(phase==='build'?'KD-Tree (building)':'KD-Tree (search)',TW/2,12);
+}
+
+// ── Phase & control ──────────────────────────────────────────────────────────
+let phase='build', fi=0, playing=false, tid=null;
+
+function totalFrames(){return phase==='build'?buildSteps.length:searchSteps.length;}
+
+function upStats(){
+  const total=totalFrames();
+  document.getElementById('sstep').textContent=(fi+1)+' / '+total;
+  if(phase==='build'){
+    const s=buildSteps[fi];
+    document.getElementById('saxis').textContent=s.axis===0?'X':'Y';
+    document.getElementById('sdepth').textContent=s.depth;
+    document.getElementById('stat4lbl').textContent='Nodes built';
+    document.getElementById('sstat4').textContent=s.placed.length+1;
+    document.getElementById('descBox').textContent='Pivot = point '+s.pivot+', splits region along '+(s.axis===0?'X':'Y')+' axis';
+  } else {
+    const s=searchSteps[fi];
+    document.getElementById('saxis').textContent=s.type;
+    document.getElementById('sdepth').textContent=s.nodeId!==null&&s.nodeId!==undefined?treeNodes[s.nodeId]?.depth??'—':'—';
+    document.getElementById('stat4lbl').textContent='Best dist';
+    document.getElementById('sstat4').textContent=s.bestDist<Infinity?s.bestDist.toFixed(1):'∞';
+    let desc='';
+    if(s.type==='visit'){const n=treeNodes[s.nodeId];desc='Visit pt '+n?.pivot+' (depth '+n?.depth+') — dist='+Math.sqrt((c1pts[s.queryIdx].x-c2pts[n?.pivot||0].x)**2+(c1pts[s.queryIdx].y-c2pts[n?.pivot||0].y)**2).toFixed(1);}
+    else if(s.type==='prune')desc='Prune subtree '+s.nodeId+' — plane dist '+s.planeDist?.toFixed(1)+' ≥ best '+s.bestDist?.toFixed(1);
+    else if(s.type==='explore')desc='Must explore subtree '+s.nodeId+' — plane dist '+s.planeDist?.toFixed(1)+' < best '+s.bestDist?.toFixed(1);
+    else if(s.type==='done')desc='✓ Nearest neighbor: point '+s.bestPt+', distance = '+s.bestDist?.toFixed(2);
+    document.getElementById('descBox').textContent=desc;
+  }
+}
+
+function render(){
+  if(fi>=totalFrames())fi=totalFrames()-1;
+  if(fi<0)fi=0;
+  drawSpace(phase,fi);
+  drawTree(phase,fi);
+  upStats();
+}
+
+function setPhase(p){
+  playing=false;clearTimeout(tid);
+  document.getElementById('bp').textContent='Play';
+  phase=p;fi=0;
+  document.getElementById('btnBuild').style.fontWeight=p==='build'?'600':'400';
+  document.getElementById('btnSearch').style.fontWeight=p==='search'?'600':'400';
+  document.getElementById('phaseLabel').textContent=p==='build'?'Phase: Build KD-Tree':'Phase: NN Search';
+  document.getElementById('leg2').style.display=p==='search'?'':'none';
+  document.getElementById('leg3').style.display=p==='search'?'':'none';
+  render();
+}
+
+function hStep(){if(fi<totalFrames()-1){fi++;render();}}
+function hPrev(){if(fi>0){fi--;render();}}
+function hReset(){fi=0;playing=false;clearTimeout(tid);document.getElementById('bp').textContent='Play';render();}
+function getDelay(){return 1300-parseInt(document.getElementById('spd').value)*145;}
+function loop(){
+  if(!playing)return;
+  if(fi>=totalFrames()-1){playing=false;document.getElementById('bp').textContent='Play';return;}
+  fi++;render();tid=setTimeout(loop,getDelay());
+}
+function hToggle(){
+  playing=!playing;
+  document.getElementById('bp').textContent=playing?'Pause':'Play';
+  if(playing)loop();else clearTimeout(tid);
+}
+setPhase('build');
+</script>

@@ -1,0 +1,235 @@
+
+<div style="padding:1rem 0">
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:1rem">
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.75rem 1rem">
+      <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:2px">Iteration</div>
+      <div id="sit" style="font-size:22px;font-weight:500;color:var(--color-text-primary)">1 / 40</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.75rem 1rem">
+      <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:2px">Checks done</div>
+      <div id="sch" style="font-size:22px;font-weight:500;color:var(--color-text-primary)">0</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.75rem 1rem">
+      <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:2px">vs brute (no stop)</div>
+      <div id="ssv" style="font-size:22px;font-weight:500;color:var(--color-text-primary)">—</div>
+    </div>
+  </div>
+
+  <canvas id="viz" width="660" height="430" style="width:100%;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)"></canvas>
+
+  <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+    <button id="bp" onclick="hToggle()">Play</button>
+    <button onclick="hStep()">Step</button>
+    <button onclick="hPrev()">Back</button>
+    <button onclick="hReset()">Reset</button>
+    <button onclick="hReshuffle()" title="Re-run with new random shuffle">Reshuffle</button>
+    <div style="flex:1"></div>
+    <label style="font-size:13px;color:var(--color-text-secondary)">Speed</label>
+    <input type="range" min="1" max="10" value="6" id="spd" style="width:80px">
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:12px;color:var(--color-text-secondary)">
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#D85A30;display:inline-block"></span>Contour 1 (query)</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#378ADD;display:inline-block"></span>Contour 2 (candidates)</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:2px;background:#EF9F27;display:inline-block;border-radius:2px"></span>Shuffle order label</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#1D9E75;display:inline-block"></span>Best match</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#9B59B6;display:inline-block"></span>Checking now</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#888;display:inline-block"></span>Already checked</span>
+  </div>
+</div>
+
+<script>
+const cv=document.getElementById('viz');
+const cx=cv.getContext('2d');
+const W=660,H=430,N=40;
+const CX=330,CY=215;
+const PHASE=Math.PI+(8/40)*2*Math.PI;
+
+function makeEll(ox,oy,rx,ry,n,wob,wf,wp,phase){
+  wob=wob||0;wf=wf||3;wp=wp||0;phase=phase||0;
+  return Array.from({length:n},function(_,i){
+    var a=(i/n)*Math.PI*2+phase;
+    var w=1+wob*Math.sin(a*wf+wp);
+    return{x:ox+rx*w*Math.cos(a),y:oy+ry*w*Math.sin(a)};
+  });
+}
+
+var c1=makeEll(CX,CY,128,98,N,0,3,0,PHASE);
+var c2=makeEll(CX+8,CY-6,150,114,N,0.06,3,1.1,PHASE);
+
+function shuffle(arr){
+  var a=arr.slice();
+  for(var i=a.length-1;i>0;i--){
+    var j=Math.floor(Math.random()*(i+1));
+    var t=a[i];a[i]=a[j];a[j]=t;
+  }
+  return a;
+}
+
+function sim(){
+  var fs=[],hMax=0,tot=0;
+  for(var qi=0;qi<N;qi++){
+    var a=c1[qi];
+    var mSq=Infinity,best=-1,chk=[];
+    // new random shuffle each iteration — key property of this algorithm
+    var order=shuffle(Array.from({length:N},function(_,i){return i;}));
+    for(var s=0;s<order.length;s++){
+      var j=order[s];
+      var b=c2[j];
+      var dSq=(a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y);
+      tot++;
+      if(dSq<mSq){mSq=dSq;best=j;}
+      var early=qi>0&&mSq<=hMax;
+      chk.push(j);
+      fs.push({qi:qi,pos:j,best:best,mSq:mSq,hMax:hMax,tot:tot,early:early,chk:chk.slice(),order:order.slice(),tr:false});
+      if(early)break;
+    }
+    var nm=Math.max(hMax,mSq);
+    fs.push({qi:qi,pos:-1,best:best,mSq:mSq,hMax:nm,tot:tot,early:false,chk:chk.slice(),order:order.slice(),tr:true});
+    hMax=nm;
+  }
+  return fs;
+}
+
+var frames=sim();
+var bestByIter={};
+frames.forEach(function(f){if(f.tr)bestByIter[f.qi]=f.best;});
+
+var fi=0,playing=false,tid=null;
+
+function pth(pts){
+  cx.beginPath();cx.moveTo(pts[0].x,pts[0].y);
+  for(var i=1;i<pts.length;i++)cx.lineTo(pts[i].x,pts[i].y);
+  cx.closePath();
+}
+
+function draw(f){
+  var dk=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var tc=dk?'rgba(255,255,255,0.45)':'rgba(0,0,0,0.40)';
+  cx.clearRect(0,0,W,H);
+
+  pth(c1);cx.strokeStyle='rgba(216,90,48,0.35)';cx.lineWidth=1.5;cx.setLineDash([]);cx.stroke();
+  pth(c2);cx.strokeStyle='rgba(55,138,221,0.35)';cx.lineWidth=1.5;cx.stroke();
+
+  // completed best-match lines
+  for(var i=0;i<f.qi;i++){
+    var b=bestByIter[i];
+    if(b>=0){
+      var aa=c1[i],bb=c2[b];
+      cx.beginPath();cx.moveTo(aa.x,aa.y);cx.lineTo(bb.x,bb.y);
+      cx.strokeStyle='rgba(29,158,117,0.22)';cx.lineWidth=1;cx.setLineDash([]);cx.stroke();
+    }
+  }
+
+  // draw faint shuffle-order arrows between consecutive checked points
+  if(!f.tr&&f.chk.length>1){
+    for(var k=0;k<f.chk.length-1;k++){
+      var pa=c2[f.chk[k]],pb=c2[f.chk[k+1]];
+      cx.beginPath();cx.moveTo(pa.x,pa.y);cx.lineTo(pb.x,pb.y);
+      cx.strokeStyle=dk?'rgba(239,159,39,0.15)':'rgba(239,159,39,0.2)';
+      cx.lineWidth=1;cx.setLineDash([2,3]);cx.stroke();cx.setLineDash([]);
+    }
+  }
+
+  // c2 points
+  for(var i=0;i<N;i++){
+    var p=c2[i],ci=f.chk.indexOf(i);
+    var col=dk?'#1e4a7a':'#6AAAE0',r=3;
+    if(ci>=0&&i!==f.best&&i!==f.pos){col=dk?'#555':'#999';}
+    if(i===f.best){col='#1D9E75';r=5.5;}
+    if(i===f.pos&&!f.tr){col='#9B59B6';r=5.5;}
+    cx.beginPath();cx.arc(p.x,p.y,r,0,Math.PI*2);cx.fillStyle=col;cx.fill();
+
+    // show shuffle step number for checked points
+    if(ci>=0){
+      var dx2=p.x-(CX+8),dy2=p.y-(CY-6),len=Math.sqrt(dx2*dx2+dy2*dy2)||1;
+      cx.font='7px monospace';
+      cx.fillStyle=dk?'rgba(239,159,39,0.8)':'rgba(180,110,0,0.75)';
+      cx.textAlign='center';
+      cx.fillText(ci+1,p.x+dx2/len*14,p.y+dy2/len*14);
+    }
+  }
+
+  // c1 points
+  for(var i=0;i<N;i++){
+    var p=c1[i],cur=i===f.qi;
+    var r=cur?7:3;
+    var col=cur?'#D85A30':(i<f.qi?'rgba(180,60,20,0.7)':'rgba(216,90,48,0.25)');
+    cx.beginPath();cx.arc(p.x,p.y,r,0,Math.PI*2);cx.fillStyle=col;cx.fill();
+    if(cur){
+      var dx2=p.x-CX,dy2=p.y-CY,len=Math.sqrt(dx2*dx2+dy2*dy2)||1;
+      cx.font='500 10px monospace';cx.fillStyle='#D85A30';cx.textAlign='center';
+      cx.fillText('a['+f.qi+']',p.x+dx2/len*20,p.y+dy2/len*20);
+    }
+  }
+
+  // current search lines
+  if(!f.tr){
+    var a=c1[f.qi];
+    if(f.best>=0){
+      cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(c2[f.best].x,c2[f.best].y);
+      cx.strokeStyle='#1D9E75';cx.lineWidth=1.5;cx.setLineDash([]);cx.stroke();
+    }
+    if(f.pos>=0&&f.pos<N&&f.pos!==f.best){
+      cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(c2[f.pos].x,c2[f.pos].y);
+      cx.strokeStyle='rgba(155,89,182,0.5)';cx.lineWidth=1;cx.setLineDash([3,3]);cx.stroke();cx.setLineDash([]);
+    }
+  }
+
+  // top: show shuffle order
+  if(!f.tr&&f.order){
+    cx.font='9px monospace';cx.fillStyle=tc;cx.textAlign='center';
+    var shown=f.order.slice(0,12).join(', ')+(f.order.length>12?'…':'');
+    cx.fillText('shuffle: ['+shown+']',W/2,16);
+  }
+
+  // status bar
+  cx.font='10px monospace';cx.fillStyle=tc;cx.textAlign='left';
+  var lbl='iter '+(f.qi+1)+'/'+N+'  a['+f.qi+']  random order';
+  if(!f.tr)lbl+='  pos='+f.pos+'  step '+(f.chk.length)+'/'+N;
+  cx.fillText(lbl,10,H-10);
+  if(f.mSq<1e15){
+    cx.textAlign='center';
+    cx.fillText('minDist='+Math.sqrt(f.mSq).toFixed(1)+'  threshold='+(f.hMax>0?Math.sqrt(f.hMax).toFixed(1):'—'),W/2,H-10);
+  }
+  if(f.early){
+    cx.font='500 10px monospace';cx.fillStyle='#1D9E75';cx.textAlign='right';
+    cx.fillText('early stop ✓  ('+f.chk.length+'/'+N+')',W-10,H-10);
+  } else if(f.tr&&f.chk.length===N){
+    cx.font='10px monospace';cx.fillStyle='#D85A30';cx.textAlign='right';
+    cx.fillText('full scan (no threshold yet)',W-10,H-10);
+  }
+}
+
+function upStats(f){
+  document.getElementById('sit').textContent=(f.qi+1)+' / '+N;
+  document.getElementById('sch').textContent=f.tot;
+  var bf=(f.qi+(f.tr?1:0))*N;
+  document.getElementById('ssv').textContent=bf>0?Math.max(0,Math.round((1-f.tot/bf)*100))+'%':'—';
+}
+
+function render(){if(fi>=frames.length)fi=frames.length-1;if(fi<0)fi=0;draw(frames[fi]);upStats(frames[fi]);}
+function hStep(){if(fi<frames.length-1){fi++;render();}}
+function hPrev(){if(fi>0){fi--;render();}}
+function hReset(){fi=0;playing=false;clearTimeout(tid);document.getElementById('bp').textContent='Play';render();}
+function hReshuffle(){
+  playing=false;clearTimeout(tid);
+  document.getElementById('bp').textContent='Play';
+  frames=sim();
+  bestByIter={};
+  frames.forEach(function(f){if(f.tr)bestByIter[f.qi]=f.best;});
+  fi=0;render();
+}
+function getDelay(){return 1100-parseInt(document.getElementById('spd').value)*100;}
+function loop(){
+  if(!playing)return;
+  if(fi>=frames.length-1){playing=false;document.getElementById('bp').textContent='Play';return;}
+  fi++;render();tid=setTimeout(loop,getDelay());
+}
+function hToggle(){
+  playing=!playing;
+  document.getElementById('bp').textContent=playing?'Pause':'Play';
+  if(playing)loop();else clearTimeout(tid);
+}
+render();
+</script>

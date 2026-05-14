@@ -1,0 +1,247 @@
+
+<div style="padding:1rem 0">
+  <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:1rem">
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.65rem .8rem">
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:2px">Iteration</div>
+      <div id="sit" style="font-size:20px;font-weight:500;color:var(--color-text-primary)">1 / 40</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.65rem .8rem">
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:2px">Our algo</div>
+      <div id="sou" style="font-size:20px;font-weight:500;color:#D85A30">0</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.65rem .8rem">
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:2px">BF + early break</div>
+      <div id="sbf" style="font-size:20px;font-weight:500;color:#378ADD">0</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.65rem .8rem">
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:2px">Saved vs BF</div>
+      <div id="ssv" style="font-size:20px;font-weight:500;color:#1D9E75">—</div>
+    </div>
+  </div>
+
+  <canvas id="viz" width="660" height="400" style="width:100%;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)"></canvas>
+
+  <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+    <button id="bp" onclick="hToggle()">Play</button>
+    <button onclick="hStep()">Step</button>
+    <button onclick="hPrev()">Back</button>
+    <button onclick="hReset()">Reset</button>
+    <div style="flex:1"></div>
+    <label style="font-size:13px;color:var(--color-text-secondary)">Speed</label>
+    <input type="range" min="1" max="10" value="6" id="spd" style="width:80px">
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:12px;color:var(--color-text-secondary)">
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#D85A30;display:inline-block"></span>Contour 1 (query)</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#378ADD;display:inline-block"></span>Contour 2 (candidates)</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:3px;background:#EF9F27;display:inline-block;border-radius:2px"></span>Start index</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#1D9E75;display:inline-block"></span>Best match</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#9B59B6;display:inline-block"></span>Checking now</span>
+  </div>
+</div>
+
+<script>
+const cv=document.getElementById('viz');
+const cx=cv.getContext('2d');
+const W=660,H=400,N=40;
+const CX=330,CY=205;
+const PHASE=Math.PI+(8/40)*2*Math.PI;
+
+function makeEll(ox,oy,rx,ry,n,wob,wf,wp,phase){
+  wob=wob||0;wf=wf||3;wp=wp||0;phase=phase||0;
+  return Array.from({length:n},function(_,i){
+    var a=(i/n)*Math.PI*2+phase;
+    var w=1+wob*Math.sin(a*wf+wp);
+    return{x:ox+rx*w*Math.cos(a),y:oy+ry*w*Math.sin(a)};
+  });
+}
+
+var c1=makeEll(CX,CY,128,98,N,0,3,0,PHASE);
+var c2=makeEll(CX+8,CY-6,150,114,N,0.06,3,1.1,PHASE);
+
+// --- Our algorithm ---
+function simOurs(){
+  var fs=[],si=0,hMax=0,tot=0;
+  for(var qi=0;qi<N;qi++){
+    var a=c1[qi];
+    var mSq=Infinity,best=-1,chk=[];
+    var goR=false,dirs=2,pos=si,off=0,done=false;
+    while(dirs>0&&!done){
+      if(pos<0||pos>=N){dirs--;goR=!goR;}
+      else{
+        var b=c2[pos];
+        var dSq=(a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y);
+        tot++;
+        if(dSq<mSq){mSq=dSq;best=pos;}
+        var early=qi>0&&mSq<=hMax;
+        chk.push(pos);
+        fs.push({qi:qi,si:si,pos:pos,best:best,mSq:mSq,hMax:hMax,tot:tot,early:early,chk:chk.slice(),tr:false});
+        if(early){done=true;break;}
+      }
+      if(dirs===2)goR=!goR;
+      pos=goR?si+off+1:si-off-1;
+      if(!goR||dirs===1)off++;
+      if(off>N)break;
+    }
+    var nm=Math.max(hMax,mSq);
+    var ns=best>=0?(best+1)%N:0;
+    fs.push({qi:qi,si:si,pos:-1,best:best,mSq:mSq,hMax:nm,tot:tot,early:false,chk:chk.slice(),tr:true,ns:ns});
+    hMax=nm;si=ns;
+  }
+  return fs;
+}
+
+// --- Brute-force + early break ---
+// For each point in c1, scan c2 from index 0 sequentially, stop when dSq <= hMaxMinSq
+function simBF(){
+  var totByIter=[],hMax=0,tot=0;
+  for(var qi=0;qi<N;qi++){
+    var a=c1[qi];
+    var mSq=Infinity,best=-1;
+    for(var j=0;j<N;j++){
+      var b=c2[j];
+      var dSq=(a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y);
+      tot++;
+      if(dSq<mSq){mSq=dSq;best=j;}
+      if(qi>0&&mSq<=hMax)break;
+    }
+    hMax=Math.max(hMax,mSq);
+    totByIter.push(tot);
+  }
+  return totByIter;
+}
+
+var frames=simOurs();
+var bfByIter=simBF();
+
+// map frame index → bf cumulative checks at that iteration
+var bestByIter={};
+frames.forEach(function(f){if(f.tr)bestByIter[f.qi]=f.best;});
+
+var fi=0,playing=false,tid=null;
+
+function pth(pts){
+  cx.beginPath();cx.moveTo(pts[0].x,pts[0].y);
+  for(var i=1;i<pts.length;i++)cx.lineTo(pts[i].x,pts[i].y);
+  cx.closePath();
+}
+
+function draw(f){
+  var dk=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var tc=dk?'rgba(255,255,255,0.45)':'rgba(0,0,0,0.40)';
+  cx.clearRect(0,0,W,H);
+
+  pth(c1);cx.strokeStyle='rgba(216,90,48,0.35)';cx.lineWidth=1.5;cx.setLineDash([]);cx.stroke();
+  pth(c2);cx.strokeStyle='rgba(55,138,221,0.35)';cx.lineWidth=1.5;cx.stroke();
+
+  for(var i=0;i<f.qi;i++){
+    var b=bestByIter[i];
+    if(b>=0){
+      var aa=c1[i],bb=c2[b];
+      cx.beginPath();cx.moveTo(aa.x,aa.y);cx.lineTo(bb.x,bb.y);
+      cx.strokeStyle='rgba(29,158,117,0.22)';cx.lineWidth=1;cx.setLineDash([]);cx.stroke();
+    }
+  }
+
+  for(var i=0;i<N;i++){
+    var p=c2[i],ci=f.chk.indexOf(i);
+    var col=dk?'#1e4a7a':'#6AAAE0',r=3;
+    if(ci>=0&&i!==f.best&&i!==f.pos){col=dk?'#3a7ab8':'#378ADD';}
+    if(i===f.best){col='#1D9E75';r=5.5;}
+    if(i===f.pos&&!f.tr){col='#9B59B6';r=5.5;}
+    if(i===f.si){
+      cx.beginPath();cx.arc(p.x,p.y,9,0,Math.PI*2);
+      cx.strokeStyle='#EF9F27';cx.lineWidth=2;cx.setLineDash([]);cx.stroke();
+    }
+    cx.beginPath();cx.arc(p.x,p.y,r,0,Math.PI*2);cx.fillStyle=col;cx.fill();
+    if(ci>=0){
+      var dx2=p.x-(CX+8),dy2=p.y-(CY-6),len=Math.sqrt(dx2*dx2+dy2*dy2)||1;
+      cx.font='7px monospace';
+      cx.fillStyle=dk?'rgba(255,255,255,0.5)':'rgba(0,0,0,0.42)';
+      cx.textAlign='center';
+      cx.fillText(ci+1,p.x+dx2/len*14,p.y+dy2/len*14);
+    }
+    if(i===0||i===1||i===2||i===N-1){
+      var dx3=p.x-(CX+8),dy3=p.y-(CY-6),len3=Math.sqrt(dx3*dx3+dy3*dy3)||1;
+      cx.font='8px monospace';cx.fillStyle=tc;cx.textAlign='center';
+      cx.fillText(i,p.x+dx3/len3*20,p.y+dy3/len3*20);
+    }
+  }
+
+  for(var i=0;i<N;i++){
+    var p=c1[i],cur=i===f.qi;
+    var r=cur?7:3;
+    var col=cur?'#D85A30':(i<f.qi?'rgba(180,60,20,0.7)':'rgba(216,90,48,0.25)');
+    cx.beginPath();cx.arc(p.x,p.y,r,0,Math.PI*2);cx.fillStyle=col;cx.fill();
+    if(cur){
+      var dx2=p.x-CX,dy2=p.y-CY,len=Math.sqrt(dx2*dx2+dy2*dy2)||1;
+      cx.font='500 10px monospace';cx.fillStyle='#D85A30';cx.textAlign='center';
+      cx.fillText('a['+f.qi+']',p.x+dx2/len*20,p.y+dy2/len*20);
+    }
+    if(i===0||i===1||i===2||i===N-1){
+      var dx3=p.x-CX,dy3=p.y-CY,len3=Math.sqrt(dx3*dx3+dy3*dy3)||1;
+      cx.font='8px monospace';cx.fillStyle=tc;cx.textAlign='center';
+      cx.fillText(i,p.x+dx3/len3*20,p.y+dy3/len3*20);
+    }
+  }
+
+  if(!f.tr){
+    var a=c1[f.qi];
+    if(f.best>=0){
+      cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(c2[f.best].x,c2[f.best].y);
+      cx.strokeStyle='#1D9E75';cx.lineWidth=1.5;cx.setLineDash([]);cx.stroke();
+    }
+    if(f.pos>=0&&f.pos<N&&f.pos!==f.best){
+      cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(c2[f.pos].x,c2[f.pos].y);
+      cx.strokeStyle='rgba(155,89,182,0.5)';cx.lineWidth=1;cx.setLineDash([3,3]);cx.stroke();cx.setLineDash([]);
+    }
+  }
+
+  if(!f.tr&&f.chk.length>0){
+    cx.font='9px monospace';cx.fillStyle=tc;cx.textAlign='center';
+    var seq='search: si='+f.si+' → '+f.chk.slice(0,Math.min(f.chk.length,10)).join(', ')+(f.chk.length>10?'…':'');
+    cx.fillText(seq,W/2,16);
+  }
+
+  cx.font='10px monospace';cx.fillStyle=tc;cx.textAlign='left';
+  var lbl='iter '+(f.qi+1)+'/'+N+'  a['+f.qi+']  startIndex='+f.si;
+  if(!f.tr)lbl+='  pos='+f.pos;
+  else lbl+='  best='+f.best+' → next startIndex='+(f.best>=0?(f.best+1)%N:0);
+  cx.fillText(lbl,10,H-10);
+  if(f.mSq<1e15){
+    cx.textAlign='center';
+    cx.fillText('minDist='+Math.sqrt(f.mSq).toFixed(1)+'  threshold='+(f.hMax>0?Math.sqrt(f.hMax).toFixed(1):'—'),W/2,H-10);
+  }
+  if(f.early){cx.font='500 10px monospace';cx.fillStyle='#1D9E75';cx.textAlign='right';cx.fillText('early termination ✓',W-10,H-10);}
+  else if(f.tr){cx.font='10px monospace';cx.fillStyle='#EF9F27';cx.textAlign='right';cx.fillText('startIndex → '+(f.best>=0?(f.best+1)%N:0),W-10,H-10);}
+}
+
+function upStats(f){
+  document.getElementById('sit').textContent=(f.qi+1)+' / '+N;
+  document.getElementById('sou').textContent=f.tot;
+  var bfTot=bfByIter[Math.min(f.qi+(f.tr?1:0),N-1)];
+  document.getElementById('sbf').textContent=bfTot;
+  if(bfTot>0&&f.tot>0){
+    var pct=Math.max(0,Math.round((1-f.tot/bfTot)*100));
+    document.getElementById('ssv').textContent=pct+'%';
+    document.getElementById('ssv').style.color=pct>0?'#1D9E75':'var(--color-text-primary)';
+  }
+}
+
+function render(){if(fi>=frames.length)fi=frames.length-1;if(fi<0)fi=0;draw(frames[fi]);upStats(frames[fi]);}
+function hStep(){if(fi<frames.length-1){fi++;render();}}
+function hPrev(){if(fi>0){fi--;render();}}
+function hReset(){fi=0;playing=false;clearTimeout(tid);document.getElementById('bp').textContent='Play';render();}
+function getDelay(){return 1100-parseInt(document.getElementById('spd').value)*100;}
+function loop(){
+  if(!playing)return;
+  if(fi>=frames.length-1){playing=false;document.getElementById('bp').textContent='Play';return;}
+  fi++;render();tid=setTimeout(loop,getDelay());
+}
+function hToggle(){
+  playing=!playing;
+  document.getElementById('bp').textContent=playing?'Pause':'Play';
+  if(playing)loop();else clearTimeout(tid);
+}
+render();
+</script>
