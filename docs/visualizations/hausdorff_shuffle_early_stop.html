@@ -1,3 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hausdorff Shuffle + Early Stop</title>
+<style>
+  :root {
+    --color-background-secondary: #f6f8fa;
+    --color-text-primary: #24292f;
+    --color-text-secondary: #57606a;
+    --color-border-tertiary: #d0d7de;
+    --border-radius-md: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #ffffff;
+    color: var(--color-text-primary);
+  }
+  .page { max-width: 780px; margin: 0 auto; }
+  canvas {
+    display: block;
+    width: 660px;
+    max-width: 100%;
+    height: auto;
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-md);
+    background: #ffffff;
+  }
+  button {
+    padding: 5px 11px;
+    border: 1px solid var(--color-border-tertiary);
+    border-radius: 6px;
+    background: #f6f8fa;
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font: inherit;
+  }
+  button:hover { background: #eef1f4; }
+  input[type="range"] { vertical-align: middle; }
+</style>
+</head>
+<body>
+<div class="page">
 
 <div style="padding:1rem 0">
   <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:1rem">
@@ -15,7 +62,7 @@
     </div>
   </div>
 
-  <canvas id="viz" width="660" height="430" style="width:100%;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)"></canvas>
+  <canvas id="viz"></canvas>
 
   <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
     <button id="bp" onclick="hToggle()">Play</button>
@@ -42,6 +89,12 @@
 const cv=document.getElementById('viz');
 const cx=cv.getContext('2d');
 const W=660,H=430,N=40;
+const DPR = Math.max(1, window.devicePixelRatio || 1);
+cv.style.width = W + 'px';
+cv.style.height = H + 'px';
+cv.width = Math.round(W * DPR);
+cv.height = Math.round(H * DPR);
+cx.setTransform(DPR, 0, 0, DPR, 0, 0);
 const CX=330,CY=215;
 const PHASE=Math.PI+(8/40)*2*Math.PI;
 
@@ -97,6 +150,37 @@ frames.forEach(function(f){if(f.tr)bestByIter[f.qi]=f.best;});
 
 var fi=0,playing=false,tid=null;
 
+
+function fillLabel(text,x,y,opts){
+  opts = opts || {};
+  cx.save();
+  cx.font = opts.font || '600 10px monospace';
+  cx.textAlign = opts.align || 'center';
+  cx.textBaseline = opts.baseline || 'middle';
+  cx.lineJoin = 'round';
+  cx.lineWidth = opts.outlineWidth || 3.8;
+  cx.strokeStyle = opts.outline || 'rgba(255,255,255,0.94)';
+  cx.strokeText(text, x, y);
+  cx.fillStyle = opts.fill || '#1f2328';
+  cx.fillText(text, x, y);
+  cx.restore();
+}
+
+function fillStatus(text,x,y,opts){
+  opts = opts || {};
+  cx.save();
+  cx.font = opts.font || '11px monospace';
+  cx.textAlign = opts.align || 'left';
+  cx.textBaseline = 'alphabetic';
+  cx.lineJoin = 'round';
+  cx.lineWidth = opts.outlineWidth || 4;
+  cx.strokeStyle = opts.outline || 'rgba(255,255,255,0.94)';
+  cx.strokeText(text, x, y);
+  cx.fillStyle = opts.fill || '#1f2328';
+  cx.fillText(text, x, y);
+  cx.restore();
+}
+
 function pth(pts){
   cx.beginPath();cx.moveTo(pts[0].x,pts[0].y);
   for(var i=1;i<pts.length;i++)cx.lineTo(pts[i].x,pts[i].y);
@@ -105,11 +189,40 @@ function pth(pts){
 
 function draw(f){
   var dk=window.matchMedia('(prefers-color-scheme: dark)').matches;
-  var tc=dk?'rgba(255,255,255,0.45)':'rgba(0,0,0,0.40)';
+  var tc=dk?'rgba(255,255,255,0.55)':'rgba(31,35,40,0.72)';
+  var labelBoxes = [];
+  function intersects(a, b) {
+    return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
+  }
+  function placeLabel(text, x, y, opts) {
+    opts = opts || {};
+    var font = opts.font || '600 10px monospace';
+    cx.save();
+    cx.font = font;
+    var w = cx.measureText(text).width;
+    cx.restore();
+    var h = opts.height || 11;
+    var shifts = opts.shifts || [[0,0],[0,-12],[0,12],[12,0],[-12,0],[12,-12],[-12,-12],[12,12],[-12,12],[0,-24],[0,24]];
+    for (var s = 0; s < shifts.length; s++) {
+      var px = x + shifts[s][0], py = y + shifts[s][1];
+      var box = {x: px - w/2 - 2, y: py - h/2 - 1, w: w + 4, h: h + 2};
+      var ok = true;
+      for (var j = 0; j < labelBoxes.length; j++) {
+        if (intersects(box, labelBoxes[j])) { ok = false; break; }
+      }
+      if (ok) {
+        labelBoxes.push(box);
+        fillLabel(text, px, py, opts);
+        return;
+      }
+    }
+    fillLabel(text, x, y, opts);
+  }
+
   cx.clearRect(0,0,W,H);
 
-  pth(c1);cx.strokeStyle='rgba(216,90,48,0.35)';cx.lineWidth=1.5;cx.setLineDash([]);cx.stroke();
-  pth(c2);cx.strokeStyle='rgba(55,138,221,0.35)';cx.lineWidth=1.5;cx.stroke();
+  pth(c1);cx.strokeStyle='rgba(216,90,48,0.92)';cx.lineWidth=2.4;cx.setLineDash([]);cx.stroke();
+  pth(c2);cx.strokeStyle='rgba(55,138,221,0.95)';cx.lineWidth=2.4;cx.stroke();
 
   // completed best-match lines
   for(var i=0;i<f.qi;i++){
@@ -117,7 +230,7 @@ function draw(f){
     if(b>=0){
       var aa=c1[i],bb=c2[b];
       cx.beginPath();cx.moveTo(aa.x,aa.y);cx.lineTo(bb.x,bb.y);
-      cx.strokeStyle='rgba(29,158,117,0.22)';cx.lineWidth=1;cx.setLineDash([]);cx.stroke();
+      cx.strokeStyle='rgba(29,158,117,0.30)';cx.lineWidth=1.2;cx.setLineDash([]);cx.stroke();
     }
   }
 
@@ -143,10 +256,11 @@ function draw(f){
     // show shuffle step number for checked points
     if(ci>=0){
       var dx2=p.x-(CX+8),dy2=p.y-(CY-6),len=Math.sqrt(dx2*dx2+dy2*dy2)||1;
-      cx.font='7px monospace';
-      cx.fillStyle=dk?'rgba(239,159,39,0.8)':'rgba(180,110,0,0.75)';
-      cx.textAlign='center';
-      cx.fillText(ci+1,p.x+dx2/len*14,p.y+dy2/len*14);
+      placeLabel(String(ci+1),p.x+dx2/len*14,p.y+dy2/len*14,{
+        font:'700 10px monospace',
+        fill:'#8a5a00',
+        height:11
+      });
     }
   }
 
@@ -158,8 +272,7 @@ function draw(f){
     cx.beginPath();cx.arc(p.x,p.y,r,0,Math.PI*2);cx.fillStyle=col;cx.fill();
     if(cur){
       var dx2=p.x-CX,dy2=p.y-CY,len=Math.sqrt(dx2*dx2+dy2*dy2)||1;
-      cx.font='500 10px monospace';cx.fillStyle='#D85A30';cx.textAlign='center';
-      cx.fillText('a['+f.qi+']',p.x+dx2/len*20,p.y+dy2/len*20);
+      placeLabel('a['+f.qi+']',p.x+dx2/len*20,p.y+dy2/len*20,{font:'700 11px monospace',fill:'#b54722',height:12});
     }
   }
 
@@ -168,11 +281,11 @@ function draw(f){
     var a=c1[f.qi];
     if(f.best>=0){
       cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(c2[f.best].x,c2[f.best].y);
-      cx.strokeStyle='#1D9E75';cx.lineWidth=1.5;cx.setLineDash([]);cx.stroke();
+      cx.strokeStyle='#1D9E75';cx.lineWidth=1.7;cx.setLineDash([]);cx.stroke();
     }
     if(f.pos>=0&&f.pos<N&&f.pos!==f.best){
       cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(c2[f.pos].x,c2[f.pos].y);
-      cx.strokeStyle='rgba(155,89,182,0.5)';cx.lineWidth=1;cx.setLineDash([3,3]);cx.stroke();cx.setLineDash([]);
+      cx.strokeStyle='rgba(155,89,182,0.85)';cx.lineWidth=1.35;cx.setLineDash([4,3]);cx.stroke();cx.setLineDash([]);
     }
   }
 
@@ -180,24 +293,24 @@ function draw(f){
   if(!f.tr&&f.order){
     cx.font='9px monospace';cx.fillStyle=tc;cx.textAlign='center';
     var shown=f.order.slice(0,12).join(', ')+(f.order.length>12?'…':'');
-    cx.fillText('shuffle: ['+shown+']',W/2,16);
+    fillStatus('shuffle: ['+shown+']',W/2,18,{align:'center'});
   }
 
   // status bar
   cx.font='10px monospace';cx.fillStyle=tc;cx.textAlign='left';
   var lbl='iter '+(f.qi+1)+'/'+N+'  a['+f.qi+']  random order';
   if(!f.tr)lbl+='  pos='+f.pos+'  step '+(f.chk.length)+'/'+N;
-  cx.fillText(lbl,10,H-10);
+  fillStatus(lbl,10,H-12);
   if(f.mSq<1e15){
     cx.textAlign='center';
-    cx.fillText('minDist='+Math.sqrt(f.mSq).toFixed(1)+'  threshold='+(f.hMax>0?Math.sqrt(f.hMax).toFixed(1):'—'),W/2,H-10);
+    fillStatus('minDist='+Math.sqrt(f.mSq).toFixed(1)+'  threshold='+(f.hMax>0?Math.sqrt(f.hMax).toFixed(1):'—'),W/2,H-12,{align:'center'});
   }
   if(f.early){
     cx.font='500 10px monospace';cx.fillStyle='#1D9E75';cx.textAlign='right';
-    cx.fillText('early stop ✓  ('+f.chk.length+'/'+N+')',W-10,H-10);
+    fillStatus('early stop ✓  ('+f.chk.length+'/'+N+')',W-10,H-12,{align:'right',fill:'#1D9E75'});
   } else if(f.tr&&f.chk.length===N){
     cx.font='10px monospace';cx.fillStyle='#D85A30';cx.textAlign='right';
-    cx.fillText('full scan (no threshold yet)',W-10,H-10);
+    fillStatus('full scan (no threshold yet)',W-10,H-12,{align:'right',fill:'#b54722'});
   }
 }
 
@@ -233,3 +346,7 @@ function hToggle(){
 }
 render();
 </script>
+
+</div>
+</body>
+</html>
