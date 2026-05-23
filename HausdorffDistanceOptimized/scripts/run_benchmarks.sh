@@ -11,6 +11,9 @@ cmake --build "$BUILD_DIR"
 
 "$EXE" \
   --folder "$PROJECT_ROOT/../TestImages/WalkingSilhouette" \
+  --folder "$PROJECT_ROOT/../TestImages/SmallDeformations" \
+  --folder "$PROJECT_ROOT/../TestImages/SyntheticDefects" \
+  --folder "$PROJECT_ROOT/../TestImages/SmallContoursDefects" \
   --folder "$PROJECT_ROOT/../TestImages/snowflake" \
   --batches 5 \
   --algorithms contour,shuffle,bruteforce

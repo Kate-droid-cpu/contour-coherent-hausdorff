@@ -19,9 +19,12 @@ try {
 
     & $Exe `
       --folder "$RepoRoot\TestImages\WalkingSilhouette" `
+      --folder "$RepoRoot\TestImages\SmallDeformations" `
+      --folder "$RepoRoot\TestImages\SyntheticDefects" `
+      --folder "$RepoRoot\TestImages\SmallContoursDefects" `
       --folder "$RepoRoot\TestImages\snowflake" `
-      --batches 2 `
-      --algorithms contour,shuffle,bruteforce,boost,kdtree
+      --batches 5 `
+      --algorithms contour,shuffle,bruteforce
 }
 finally {
     Pop-Location

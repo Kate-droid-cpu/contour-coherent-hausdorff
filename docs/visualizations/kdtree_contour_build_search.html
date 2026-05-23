@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KD-tree contour build and search visualization</title>
+<style>
+  :root {
+    --font-family-sans: Inter, Segoe UI, Arial, sans-serif;
+    --color-text: #1f2937;
+    --color-text-secondary: #4b5563;
+    --color-background: #f8fafc;
+    --color-background-secondary: #ffffff;
+    --color-border-tertiary: #d5dde8;
+    --border-radius-md: 16px;
+    --accent-blue: #1f78ff;
+    --accent-red: #e35d2f;
+    --accent-gold: #f4a62a;
+    --accent-green: #17a56b;
+    --accent-purple: #9b59b6;
+  }
+  html, body {
+    margin: 0;
+    background: var(--color-background);
+    color: var(--color-text);
+    font-family: var(--font-family-sans);
+  }
+  body {
+    padding: 24px;
+  }
+  .viz-shell {
+    max-width: 1220px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid #e5eaf2;
+    border-radius: 20px;
+    box-shadow: 0 10px 32px rgba(15,23,42,0.06);
+    padding: 22px;
+  }
+  button {
+    border: 1px solid #cad4e1;
+    background: #fff;
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-size: 15px;
+    color: var(--color-text);
+    cursor: pointer;
+  }
+  button:hover { background: #f7fafc; }
+  input[type="range"] { accent-color: var(--accent-blue); }
+  canvas {
+    background: #ffffff;
+    box-shadow: inset 0 0 0 1px #dbe3ee;
+  }
+</style>
+</head>
+<body>
+<div class="viz-shell">
+
+<div style="padding:0;font-family:var(--font-family-sans)">
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">
+    <button id="btnBuild" onclick="setPhase('build')" style="font-weight:600">① Build</button>
+    <button id="btnSearch" onclick="setPhase('search')">② Search</button>
+    <div style="flex:1"></div>
+    <span id="phaseLabel" style="font-size:14px;color:var(--color-text-secondary);align-self:center;font-weight:600">Phase: Build KD-Tree</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+    <div style="background:var(--color-background-secondary);border:1px solid #dbe3ee;border-radius:var(--border-radius-md);padding:1rem 1.1rem;box-shadow:0 2px 10px rgba(15,23,42,0.03)">
+      <div style="font-size:15px;color:var(--color-text-secondary)">Step</div>
+      <div id="sstep" style="font-size:28px;font-weight:700">0 / 0</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border:1px solid #dbe3ee;border-radius:var(--border-radius-md);padding:1rem 1.1rem;box-shadow:0 2px 10px rgba(15,23,42,0.03)">
+      <div style="font-size:15px;color:var(--color-text-secondary)">Split axis</div>
+      <div id="saxis" style="font-size:28px;font-weight:700">—</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border:1px solid #dbe3ee;border-radius:var(--border-radius-md);padding:1rem 1.1rem;box-shadow:0 2px 10px rgba(15,23,42,0.03)">
+      <div style="font-size:15px;color:var(--color-text-secondary)">Depth</div>
+      <div id="sdepth" style="font-size:28px;font-weight:700">—</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border:1px solid #dbe3ee;border-radius:var(--border-radius-md);padding:1rem 1.1rem;box-shadow:0 2px 10px rgba(15,23,42,0.03)">
+      <div style="font-size:15px;color:var(--color-text-secondary)" id="stat4lbl">Nodes built</div>
+      <div id="sstat4" style="font-size:28px;font-weight:700">0</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
+    <canvas id="cvSpace" width="720" height="720" style="width:720px;height:720px;border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)"></canvas>
+    <canvas id="cvTree"  width="430" height="720" style="width:430px;height:720px;border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)"></canvas>
+  </div>
+
+  <div style="display:flex;gap:10px;margin-top:16px;align-items:center;flex-wrap:wrap">
+    <button id="bp" onclick="hToggle()">Play</button>
+    <button onclick="hStep()">Step</button>
+    <button onclick="hPrev()">Back</button>
+    <button onclick="hReset()">Reset</button>
+    <div style="flex:1"></div>
+    <label style="font-size:15px;color:var(--color-text-secondary);font-weight:600">Speed</label>
+    <input type="range" min="1" max="8" value="3" id="spd" style="width:130px">
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:18px;font-size:16px;color:var(--color-text-secondary)">
+    <span><span style="display:inline-block;width:12px;height:3px;background:#378ADD;vertical-align:middle;border-radius:2px"></span> Split X</span>
+    <span><span style="display:inline-block;width:12px;height:3px;background:#D85A30;vertical-align:middle;border-radius:2px"></span> Split Y</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#EF9F27;vertical-align:middle"></span> Pivot (median)</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#1D9E75;vertical-align:middle"></span> Placed / Best</span>
+    <span id="leg2" style="display:none"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#9B59B6;vertical-align:middle"></span> Pruned region</span>
+    <span id="leg3" style="display:none"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#D85A30;vertical-align:middle"></span> Query point</span>
+  </div>
+
+  <div id="descBox" style="margin-top:16px;font-size:16px;color:var(--color-text-secondary);min-height:24px;font-weight:500"></div>
+</div>
+
+<script>
+// ── Contour ──────────────────────────────────────────────────────────────────
+const N=40, CX2=195, CY2=195, PHASE=Math.PI+(8/40)*2*Math.PI;
+function makeEll(ox,oy,rx,ry,n,wob,wf,wp,phase){
+  wob=wob||0;wf=wf||3;wp=wp||0;phase=phase||0;
+  return Array.from({length:n},(_,i)=>{
+    const a=(i/n)*Math.PI*2+phase, w=1+wob*Math.sin(a*wf+wp);
+    return{x:ox+rx*w*Math.cos(a), y:oy+ry*w*Math.sin(a)};
+  });
+}
+const c2pts = makeEll(CX2,CY2,148,112,N,0.06,3,1.1,PHASE);
+const c1pts = makeEll(CX2-6,CY2+4,126,96,N,0,3,0,PHASE);
+
+// ── KD-Tree Build ────────────────────────────────────────────────────────────
+let buildSteps=[], treeNodes=[], nodeId=0;
+function build(indices, xmin,ymin,xmax,ymax, depth, parentId, side){
+  if(!indices.length) return null;
+  const axis=depth%2;
+  const sorted=[...indices].sort((a,b)=>axis===0?c2pts[a].x-c2pts[b].x:c2pts[a].y-c2pts[b].y);
+  const mid=Math.floor(sorted.length/2);
+  const pivot=sorted[mid];
+  const id=nodeId++;
+  treeNodes.push({id,pivot,axis,depth,parentId,side,left:null,right:null,
+    region:{xmin,ymin,xmax,ymax}});
+  const placedSoFar=treeNodes.slice(0,-1).map(n=>n.pivot);
+  buildSteps.push({id,pivot,axis,depth,region:{xmin,ymin,xmax,ymax},
+    remaining:sorted.filter(i=>i!==pivot), placed:[...placedSoFar]});
+  const sv=axis===0?c2pts[pivot].x:c2pts[pivot].y;
+  const lId=build(sorted.slice(0,mid), xmin,ymin,
+    axis===0?sv:xmax, axis===1?sv:ymax, depth+1,id,'left');
+  const rId=build(sorted.slice(mid+1),
+    axis===0?sv:xmin, axis===1?sv:ymin,
+    xmax,ymax, depth+1,id,'right');
+  treeNodes[id].left=lId; treeNodes[id].right=rId;
+  return id;
+}
+const minX=Math.min(...c2pts.map(p=>p.x))-10;
+const maxX=Math.max(...c2pts.map(p=>p.x))+10;
+const minY=Math.min(...c2pts.map(p=>p.y))-10;
+const maxY=Math.max(...c2pts.map(p=>p.y))+10;
+build(Array.from({length:N},(_,i)=>i), minX,minY,maxX,maxY, 0,null,null);
+
+// ── Tree layout ──────────────────────────────────────────────────────────────
+function layoutTree(){
+  const TW=430,TH=700,pad=24;
+  const byDepth={};
+  treeNodes.forEach(n=>{(byDepth[n.depth]||(byDepth[n.depth]=[])).push(n.id);});
+  const maxD=Math.max(...treeNodes.map(n=>n.depth));
+  treeNodes.forEach(n=>{
+    const lvl=byDepth[n.depth], idx=lvl.indexOf(n.id);
+    n.ty=pad+20+n.depth*(TH-2*pad-20)/(maxD||1);
+    n.tx=pad+(idx+0.5)*(TW-2*pad)/lvl.length;
+  });
+}
+layoutTree();
+
+// ── KD Search ────────────────────────────────────────────────────────────────
+let searchSteps=[];
+function buildSearch(queryIdx){
+  searchSteps=[];
+  const q=c1pts[queryIdx];
+  let bestDist=Infinity, bestPt=-1;
+  function searchNode(id){
+    if(id===null)return;
+    const node=treeNodes[id];
+    const p=c2pts[node.pivot];
+    const d=Math.sqrt((q.x-p.x)**2+(q.y-p.y)**2);
+    const improved=d<bestDist;
+    if(improved){bestDist=d;bestPt=node.pivot;}
+    searchSteps.push({type:'visit',nodeId:id,queryIdx,bestPt,bestDist,improved});
+    const axis=node.axis;
+    const diff=axis===0?q.x-p.x:q.y-p.y;
+    const first=diff>=0?node.right:node.left;
+    const second=diff>=0?node.left:node.right;
+    searchNode(first);
+    // check if we need to explore other side
+    const planeDist=Math.abs(diff);
+    if(planeDist<bestDist){
+      searchSteps.push({type:'explore',nodeId:second,queryIdx,bestPt,bestDist,planeDist});
+      searchNode(second);
+    } else {
+      searchSteps.push({type:'prune',nodeId:second,queryIdx,bestPt,bestDist,planeDist});
+    }
+  }
+  searchNode(0);
+  searchSteps.push({type:'done',queryIdx,bestPt,bestDist});
+}
+buildSearch(5); // default query = c1[5]
+
+// ── Canvas & drawing ─────────────────────────────────────────────────────────
+const cvS=document.getElementById('cvSpace'), cxS=cvS.getContext('2d');
+const cvT=document.getElementById('cvTree'),  cxT=cvT.getContext('2d');
+const SW=720,SH=720,TW=430,TH=720;
+const SPAD=46;
+function sc(px,py){
+  return{x:SPAD+(px-minX)/(maxX-minX)*(SW-2*SPAD),
+         y:SPAD+(py-minY)/(maxY-minY)*(SH-2*SPAD)};
+}
+
+const AXCOL=['#1f78ff','#e35d2f'];
+const DEPTHALPHA=[1,0.75,0.55,0.4,0.28,0.2];
+
+function drawClosedPolyline(ctx, pts, color, width, alpha){
+  if(!pts || !pts.length) return;
+  ctx.save();
+  ctx.beginPath();
+  const p0=sc(pts[0].x, pts[0].y);
+  ctx.moveTo(p0.x, p0.y);
+  for(let i=1;i<pts.length;i++){
+    const pi=sc(pts[i].x, pts[i].y);
+    ctx.lineTo(pi.x, pi.y);
+  }
+  ctx.closePath();
+  ctx.strokeStyle=color;
+  ctx.lineWidth=width;
+  ctx.globalAlpha=alpha;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSpace(phase, fi){
+  const dk=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const tc=dk?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.35)';
+  cxS.clearRect(0,0,SW,SH);
+  drawClosedPolyline(cxS, c2pts, '#1f78ff', 2.5, 0.35);
+  drawClosedPolyline(cxS, c1pts, '#e35d2f', 2.0, phase==='search'?0.35:0.15);
+
+  if(phase==='build'){
+    const s=buildSteps[fi];
+    // all past splits
+    for(let k=0;k<=fi;k++){
+      const sk=buildSteps[k];
+      const r=sk.region, p=c2pts[sk.pivot];
+      const al=DEPTHALPHA[sk.depth]||0.15;
+      cxS.beginPath();
+      cxS.strokeStyle=AXCOL[sk.axis];
+      cxS.lineWidth=k===fi?3.5:2.0;
+      cxS.globalAlpha=k===fi?1:al;
+      if(sk.axis===0){const a=sc(p.x,r.ymin),b=sc(p.x,r.ymax);cxS.moveTo(a.x,a.y);cxS.lineTo(b.x,b.y);}
+      else           {const a=sc(r.xmin,p.y),b=sc(r.xmax,p.y);cxS.moveTo(a.x,a.y);cxS.lineTo(b.x,b.y);}
+      cxS.setLineDash([]);cxS.stroke();cxS.globalAlpha=1;
+    }
+    // current region box
+    const r=s.region, ra=sc(r.xmin,r.ymin),rb=sc(r.xmax,r.ymax);
+    cxS.beginPath();cxS.rect(ra.x,ra.y,rb.x-ra.x,rb.y-ra.y);
+    cxS.strokeStyle=AXCOL[s.axis];cxS.lineWidth=2.5;cxS.setLineDash([4,3]);cxS.stroke();cxS.setLineDash([]);
+    // c2 points
+    for(let i=0;i<N;i++){
+      const p=c2pts[i],sp=sc(p.x,p.y);
+      const placed=s.placed.indexOf(i)>=0, isPivot=i===s.pivot;
+      const inRegion=s.remaining.indexOf(i)>=0;
+      let col=dk?'#3a7ab8':'#4ea2ff', r2=5;
+      if(placed){col='#17a56b';r2=7;}
+      if(isPivot){col='#f4a62a';r2=11;}
+      if(!placed&&!isPivot&&!inRegion){col=dk?'#4b5563':'#cfd8e3';r2=4;}
+      cxS.beginPath();cxS.arc(sp.x,sp.y,r2,0,Math.PI*2);cxS.fillStyle=col;cxS.fill();
+      if(isPivot){cxS.font='bold 14px monospace';cxS.fillStyle='#111827';cxS.textAlign='center';cxS.fillText(i,sp.x,sp.y+5);}
+    }
+    // label
+    const piv=c2pts[s.pivot],sp=sc(piv.x,piv.y);
+    cxS.font='bold 16px monospace';cxS.fillStyle=AXCOL[s.axis];cxS.textAlign='left';
+    cxS.fillText('split '+(s.axis===0?'X':'Y')+' median='+s.pivot,14,SH-16);
+
+  } else {
+    // search phase — draw all split lines (complete tree)
+    treeNodes.forEach(n=>{
+      const r=n.region,p=c2pts[n.pivot];
+      const al=DEPTHALPHA[n.depth]||0.12;
+      cxS.beginPath();cxS.strokeStyle=AXCOL[n.axis];cxS.lineWidth=1.75;cxS.globalAlpha=al;
+      if(n.axis===0){const a=sc(p.x,r.ymin),b=sc(p.x,r.ymax);cxS.moveTo(a.x,a.y);cxS.lineTo(b.x,b.y);}
+      else          {const a=sc(r.xmin,p.y),b=sc(r.xmax,p.y);cxS.moveTo(a.x,a.y);cxS.lineTo(b.x,b.y);}
+      cxS.setLineDash([]);cxS.stroke();cxS.globalAlpha=1;
+    });
+
+    const s=searchSteps[fi];
+    if(!s)return;
+    const q=c1pts[s.queryIdx];
+
+    // visited/pruned so far
+    const visited=new Set(), pruned=new Set();
+    for(let k=0;k<=fi;k++){
+      const sk=searchSteps[k];
+      if(sk.type==='visit'&&sk.nodeId!==null)visited.add(sk.nodeId);
+      if(sk.type==='prune'&&sk.nodeId!==null)pruned.add(sk.nodeId);
+    }
+
+    // highlight pruned regions
+    pruned.forEach(nid=>{
+      if(nid===null||nid===undefined)return;
+      const node=treeNodes[nid];if(!node)return;
+      const r=node.region,ra=sc(r.xmin,r.ymin),rb=sc(r.xmax,r.ymax);
+      cxS.fillStyle='rgba(155,89,182,0.14)';
+      cxS.fillRect(ra.x,ra.y,rb.x-ra.x,rb.y-ra.y);
+    });
+
+    // best distance circle
+    if(s.bestDist<Infinity){
+      const sq=sc(q.x,q.y);
+      const rx=s.bestDist/(maxX-minX)*(SW-2*SPAD);
+      cxS.beginPath();cxS.arc(sq.x,sq.y,rx,0,Math.PI*2);
+      cxS.strokeStyle='rgba(23,165,107,0.52)';cxS.lineWidth=2;cxS.setLineDash([3,3]);cxS.stroke();cxS.setLineDash([]);
+    }
+
+    // c2 points
+    for(let i=0;i<N;i++){
+      const p=c2pts[i],sp=sc(p.x,p.y);
+      const inVisited=[...visited].some(nid=>treeNodes[nid]&&treeNodes[nid].pivot===i);
+      let col=dk?'#4ea2ff':'#8fc0ff', r2=5;
+      if(inVisited)col=dk?'#62adff':'#1f78ff';
+      if(s.bestPt===i){col='#17a56b';r2=10;}
+      if(s.type==='visit'&&s.nodeId!==null&&treeNodes[s.nodeId]&&treeNodes[s.nodeId].pivot===i){col='#f4a62a';r2=10;}
+      cxS.beginPath();cxS.arc(sp.x,sp.y,r2,0,Math.PI*2);cxS.fillStyle=col;cxS.fill();
+    }
+
+    // query point (c1)
+    const sq=sc(q.x,q.y);
+    cxS.beginPath();cxS.arc(sq.x,sq.y,11,0,Math.PI*2);cxS.fillStyle='#e35d2f';cxS.fill();
+    cxS.font='bold 14px monospace';cxS.fillStyle='#fff';cxS.textAlign='center';cxS.fillText('q',sq.x,sq.y+5);
+
+    // line to best
+    if(s.bestPt>=0){
+      const sb=sc(c2pts[s.bestPt].x,c2pts[s.bestPt].y);
+      cxS.beginPath();cxS.moveTo(sq.x,sq.y);cxS.lineTo(sb.x,sb.y);
+      cxS.strokeStyle='#17a56b';cxS.lineWidth=2.8;cxS.setLineDash([]);cxS.stroke();
+    }
+
+    // line to current
+    if(s.type==='visit'&&s.nodeId!==null){
+      const node=treeNodes[s.nodeId];
+      if(node){
+        const sc2=sc(c2pts[node.pivot].x,c2pts[node.pivot].y);
+        cxS.beginPath();cxS.moveTo(sq.x,sq.y);cxS.lineTo(sc2.x,sc2.y);
+        cxS.strokeStyle='rgba(244,166,42,0.75)';cxS.lineWidth=2;cxS.setLineDash([3,3]);cxS.stroke();cxS.setLineDash([]);
+      }
+    }
+
+    cxS.font='15px monospace';cxS.fillStyle=tc;cxS.textAlign='left';
+    let desc='';
+    if(s.type==='visit')desc='Visiting node '+s.nodeId+' (pt '+treeNodes[s.nodeId]?.pivot+')';
+    else if(s.type==='prune')desc='Pruned subtree — plane dist='+s.planeDist?.toFixed(1)+' ≥ best='+s.bestDist?.toFixed(1);
+    else if(s.type==='explore')desc='Must explore — plane dist='+s.planeDist?.toFixed(1)+' < best='+s.bestDist?.toFixed(1);
+    else if(s.type==='done')desc='Done — nearest: pt '+s.bestPt+', dist='+s.bestDist?.toFixed(2);
+    cxS.fillText(desc,12,SH-14);
+  }
+}
+
+function drawTree(phase, fi){
+  const dk=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const tc=dk?'rgba(255,255,255,0.35)':'rgba(0,0,0,0.3)';
+  cxT.clearRect(0,0,TW,TH);
+
+  let placedSet=new Set(), currentId=null, prunedSet=new Set(), visitedSet=new Set();
+
+  if(phase==='build'){
+    const s=buildSteps[fi];
+    s.placed.forEach(i=>placedSet.add(treeNodes.find(n=>n.pivot===i)?.id));
+    currentId=s.id;
+    placedSet.add(currentId);
+  } else {
+    treeNodes.forEach(n=>placedSet.add(n.id));
+    for(let k=0;k<=fi;k++){
+      const sk=searchSteps[k];
+      if(sk.type==='visit'&&sk.nodeId!==null)visitedSet.add(sk.nodeId);
+      if(sk.type==='prune'&&sk.nodeId!==null)prunedSet.add(sk.nodeId);
+      if(sk.type==='visit')currentId=sk.nodeId;
+    }
+  }
+
+  // edges
+  treeNodes.forEach(n=>{
+    if(!placedSet.has(n.id))return;
+    if(n.parentId===null)return;
+    cxT.beginPath();cxT.moveTo(treeNodes[n.parentId].tx,treeNodes[n.parentId].ty);
+    cxT.lineTo(n.tx,n.ty);
+    cxT.strokeStyle=dk?'rgba(255,255,255,0.24)':'rgba(0,0,0,0.16)';
+    cxT.lineWidth=2;cxT.stroke();
+  });
+
+  // nodes
+  treeNodes.forEach(n=>{
+    if(!placedSet.has(n.id))return;
+    const isCur=n.id===currentId;
+    const isPruned=prunedSet.has(n.id);
+    const isVisited=visitedSet.has(n.id);
+    let col=AXCOL[n.axis],r=8;
+    if(phase==='build'){
+      if(isCur){col='#f4a62a';r=13;}
+      else if(!placedSet.has(n.id))col=dk?'#333':'#ddd';
+    } else {
+      col=dk?'#2a4a2a':'#9bcfb8';
+      if(isVisited)col=AXCOL[n.axis];
+      if(isPruned){col='#9b59b6';r=8;}
+      if(isCur){col='#f4a62a';r=13;}
+    }
+    cxT.beginPath();cxT.arc(n.tx,n.ty,r,0,Math.PI*2);cxT.fillStyle=col;cxT.fill();
+    cxT.font=(r>8?'bold ':'')+' 12px monospace';
+    cxT.fillStyle=r>8?'#111827':'#ffffff';
+    cxT.textAlign='center';
+    cxT.fillText(n.pivot,n.tx,n.ty+4);
+  });
+
+  cxT.font='bold 16px monospace';cxT.fillStyle=tc;cxT.textAlign='center';
+  cxT.fillText(phase==='build'?'KD-Tree (building)':'KD-Tree (search)',TW/2,20);
+}
+
+// ── Phase & control ──────────────────────────────────────────────────────────
+let phase='build', fi=0, playing=false, tid=null;
+
+function totalFrames(){return phase==='build'?buildSteps.length:searchSteps.length;}
+
+function upStats(){
+  const total=totalFrames();
+  document.getElementById('sstep').textContent=(fi+1)+' / '+total;
+  if(phase==='build'){
+    const s=buildSteps[fi];
+    document.getElementById('saxis').textContent=s.axis===0?'X':'Y';
+    document.getElementById('sdepth').textContent=s.depth;
+    document.getElementById('stat4lbl').textContent='Nodes built';
+    document.getElementById('sstat4').textContent=s.placed.length+1;
+    document.getElementById('descBox').textContent='Pivot = point '+s.pivot+', splits region along '+(s.axis===0?'X':'Y')+' axis';
+  } else {
+    const s=searchSteps[fi];
+    document.getElementById('saxis').textContent=s.type;
+    document.getElementById('sdepth').textContent=s.nodeId!==null&&s.nodeId!==undefined?treeNodes[s.nodeId]?.depth??'—':'—';
+    document.getElementById('stat4lbl').textContent='Best dist';
+    document.getElementById('sstat4').textContent=s.bestDist<Infinity?s.bestDist.toFixed(1):'∞';
+    let desc='';
+    if(s.type==='visit'){const n=treeNodes[s.nodeId];desc='Visit pt '+n?.pivot+' (depth '+n?.depth+') — dist='+Math.sqrt((c1pts[s.queryIdx].x-c2pts[n?.pivot||0].x)**2+(c1pts[s.queryIdx].y-c2pts[n?.pivot||0].y)**2).toFixed(1);}
+    else if(s.type==='prune')desc='Prune subtree '+s.nodeId+' — plane dist '+s.planeDist?.toFixed(1)+' ≥ best '+s.bestDist?.toFixed(1);
+    else if(s.type==='explore')desc='Must explore subtree '+s.nodeId+' — plane dist '+s.planeDist?.toFixed(1)+' < best '+s.bestDist?.toFixed(1);
+    else if(s.type==='done')desc='✓ Nearest neighbor: point '+s.bestPt+', distance = '+s.bestDist?.toFixed(2);
+    document.getElementById('descBox').textContent=desc;
+  }
+}
+
+function render(){
+  if(fi>=totalFrames())fi=totalFrames()-1;
+  if(fi<0)fi=0;
+  drawSpace(phase,fi);
+  drawTree(phase,fi);
+  upStats();
+}
+
+function setPhase(p){
+  playing=false;clearTimeout(tid);
+  document.getElementById('bp').textContent='Play';
+  phase=p;fi=0;
+  document.getElementById('btnBuild').style.fontWeight=p==='build'?'600':'400';
+  document.getElementById('btnSearch').style.fontWeight=p==='search'?'600':'400';
+  document.getElementById('phaseLabel').textContent=p==='build'?'Phase: Build KD-Tree':'Phase: NN Search';
+  document.getElementById('leg2').style.display=p==='search'?'':'none';
+  document.getElementById('leg3').style.display=p==='search'?'':'none';
+  render();
+}
+
+function hStep(){if(fi<totalFrames()-1){fi++;render();}}
+function hPrev(){if(fi>0){fi--;render();}}
+function hReset(){fi=0;playing=false;clearTimeout(tid);document.getElementById('bp').textContent='Play';render();}
+function getDelay(){return 1300-parseInt(document.getElementById('spd').value)*145;}
+function loop(){
+  if(!playing)return;
+  if(fi>=totalFrames()-1){playing=false;document.getElementById('bp').textContent='Play';return;}
+  fi++;render();tid=setTimeout(loop,getDelay());
+}
+function hToggle(){
+  playing=!playing;
+  document.getElementById('bp').textContent=playing?'Pause':'Play';
+  if(playing)loop();else clearTimeout(tid);
+}
+
+function setupHiDPI(canvas, ctx){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const needW = Math.round(rect.width * dpr);
+  const needH = Math.round(rect.height * dpr);
+  if(canvas.width !== needW || canvas.height !== needH){
+    canvas.width = needW;
+    canvas.height = needH;
+  }
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+function refreshCanvasScale(){
+  setupHiDPI(cvS, cxS);
+  setupHiDPI(cvT, cxT);
+}
+refreshCanvasScale();
+window.addEventListener('resize', () => { refreshCanvasScale(); render(); });
+setPhase('build');
+</script>
+
+</div>
+</body>
+</html>
