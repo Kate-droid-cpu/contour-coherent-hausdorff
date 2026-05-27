@@ -12,52 +12,56 @@
     <nav class="nav">
       <a class="brand" href="index.html">Contour-Coherent Hausdorff</a>
       <div class="nav-links">
-        <a href="index.html">Home</a>
-        <a href="https://github.com/Kate-droid-cpu/contour-coherent-hausdorff">GitHub</a>
+          <a href="index.html">Home</a>
+          <a href="https://github.com/Kate-droid-cpu/contour-coherent-hausdorff">GitHub</a>
+          <a href="https://www.linkedin.com/in/timokate/">LinkedIn</a>
       </div>
     </nav>
   </header>
 
   <main class="container">
-    <article class="article">
-      <p class="eyebrow">Exact Hausdorff distance • C++ • ordered contours</p>
-      <h1>Speeding Up Exact Hausdorff Distance by 10x+ on Ordered Contours</h1>
+      <article class="article">
+          <p class="eyebrow">Image Processing • Geometry • Exact Hausdorff distance • ordered contours • Optimizations </p>
+          <h1>Speeding Up Exact Hausdorff Distance by 10x+ on ordered contours</h1>
+          <p class="article-meta">
+              Catherine Timokhina · Senior Software Engineer · May 2026
+          </p>
 
-      <p class="lede">While implementing a new C++ algorithm for defect detection, I ran into a performance problem: we needed to compute the Hausdorff distance between contours many times.</p>
+          <p class="lede">While implementing a new C++ algorithm for defect detection, I ran into a performance problem: we needed to compute the Hausdorff distance between contours many times.</p>
 
-      <p class="lede">The contours were ordered sequences of points extracted from binary images. The task involved comparing many contours and grouping similar ones based on the Hausdorff distance.</pclass="lede">
+          <p class="lede">The contours were ordered sequences of points extracted from binary images. The task involved comparing many contours and grouping similar ones based on the Hausdorff distance.</pclass="lede">
 
-      <p class="lede">Before getting to the optimization I ended up using, let’s briefly recall how Hausdorff distance is computed and what common optimizations already exist.</p>
+          <p class="lede">Before getting to the optimization I ended up using, let’s briefly recall how Hausdorff distance is computed and what common optimizations already exist.</p>
 
-      <h2>Classic Hausdorff distance: brute force</h2>
+          <h2>Classic Hausdorff distance: brute force</h2>
 
-      <p>Suppose we have two contours, <code>A</code> and <code>B</code>. For each point <code>A[i]</code>, we find the closest point in contour <code>B</code>. Let that point be <code>B[j]</code>. Then:</p>
+          <p>Suppose we have two contours, <code>A</code> and <code>B</code>. For each point <code>A[i]</code>, we find the closest point in contour <code>B</code>. Let that point be <code>B[j]</code>. Then:</p>
 
 <pre><code>D[i] = distance(A[i], B[j])</code></pre>
 
-      <p>After computing all these minimal distances, we take the maximum:</p>
+          <p>After computing all these minimal distances, we take the maximum:</p>
 
 <pre><code>h(A, B) = max(D[0] ... D[n - 1])</code></pre>
 
-      <p>This is the directed Hausdorff distance. In general, <code>h(A, B)</code> can differ from <code>h(B, A)</code>, so the symmetric Hausdorff distance is usually computed as:</p>
+          <p>This is the directed Hausdorff distance. In general, <code>h(A, B)</code> can differ from <code>h(B, A)</code>, so the symmetric Hausdorff distance is usually computed as:</p>
 
 <pre><code>H(A, B) = max(h(A, B), h(B, A))</code></pre>
 
-      <figure class="figure figure-small">
-        <img src="images/figure1_directed_hausdorff.png" alt="Directed Hausdorff distances h(A, B) and h(B, A)">
-        <figcaption>Figure 1. Directed Hausdorff distances <code>h(A, B)</code> and <code>h(B, A)</code>.</figcaption>
-      </figure>
+          <figure class="figure figure-small">
+              <img src="images/figure1_directed_hausdorff.png" alt="Directed Hausdorff distances h(A, B) and h(B, A)">
+              <figcaption>Figure 1. Directed Hausdorff distances <code>h(A, B)</code> and <code>h(B, A)</code>.</figcaption>
+          </figure>
 
-      <p>The naive implementation follows the definition directly: for each point of the first contour, scan all points of the second contour. If the contour sizes are <code>n</code> and <code>m</code>, one directed pass takes <code>O(n * m)</code>, and the symmetric distance requires two such passes.</p>
+          <p>The naive implementation follows the definition directly: for each point of the first contour, scan all points of the second contour. If the contour sizes are <code>n</code> and <code>m</code>, one directed pass takes <code>O(n * m)</code>, and the symmetric distance requires two such passes.</p>
 
-      <figure class="figure">
-        <img src="images/figure2_bruteforce.gif" alt="Classic brute-force traversal visualization">
-        <figcaption>Figure 2. Classic brute-force traversal: for each point <code>A[i]</code>, all points of <code>B</code> are checked.</figcaption>
-      </figure>
+          <figure class="figure">
+              <img src="images/figure2_bruteforce.gif" alt="Classic brute-force traversal visualization">
+              <figcaption>Figure 2. Classic brute-force traversal: for each point <code>A[i]</code>, all points of <code>B</code> are checked.</figcaption>
+          </figure>
 
-      <p><a href="visualizations/hausdorff_bruteforce_no_stop.html">Interactive brute force visualization on GitHub</a></p>
+          <p><a href="visualizations/hausdorff_bruteforce_no_stop.html">Interactive brute force visualization on GitHub</a></p>
 
-      <p>The brute-force approach is simple and exact. But as soon as contours contain many points and we compare many contour pairs, it becomes expensive. <strong class="lede">For our task, it was too expensive.</strong class="lede"></p>
+          <p>The brute-force approach is simple and exact. But as soon as contours contain many points and we compare many contour pairs, it becomes expensive. <strong class="lede">For our task, it was too expensive.</strong></p>
 
 <pre><code>directedHausdorff(A, B):
     maxMin = 0
@@ -68,22 +72,22 @@
         maxMin = max(maxMin, minDist)
     return maxMin</code></pre>
 
-      <h2>Brute force with early break</h2>
+          <h2>Brute force with early break</h2>
 
-      <p>If we need the exact maximum distance, we can still apply a common early-break optimization.</p>
+          <p>If we need the exact maximum distance, we can still apply a common early-break optimization.</p>
 
-      <p>During the inner loop, if the current <code>minDist</code> for <code>A[i]</code> has already become less than or equal to the current <code>maxMin</code>, then this point <code>A[i]</code> cannot increase the final directed Hausdorff distance anymore. So we can stop checking the remaining points of <code>B</code> for this <code>A[i]</code>.</p>
+          <p>During the inner loop, if the current <code>minDist</code> for <code>A[i]</code> has already become less than or equal to the current <code>maxMin</code>, then this point <code>A[i]</code> cannot increase the final directed Hausdorff distance anymore. So we can stop checking the remaining points of <code>B</code> for this <code>A[i]</code>.</p>
 
-      <p>This does not change the result. The distance remains exact. We simply stop checking candidates that are already guaranteed not to affect the final maximum.</p>
+          <p>This does not change the result. The distance remains exact. We simply stop checking candidates that are already guaranteed not to affect the final maximum.</p>
 
-      <figure class="figure">
-        <img src="images/figure3_early_break.gif" alt="Brute force with early break visualization">
-        <figcaption>Figure 3. Brute force + early break: the inner loop stops once the current point can no longer increase <code>maxMin</code>.</figcaption>
-      </figure>
+          <figure class="figure">
+              <img src="images/figure3_early_break.gif" alt="Brute force with early break visualization">
+              <figcaption>Figure 3. Brute force + early break: the inner loop stops once the current point can no longer increase <code>maxMin</code>.</figcaption>
+          </figure>
 
-      <p><a href="visualizations/hausdorff_bruteforce_viz.html">Interactive brute force + early break visualization on GitHub</a></p>
+          <p><a href="visualizations/hausdorff_bruteforce_viz.html">Interactive brute force + early break visualization on GitHub</a></p>
 
-      <p>Early break gives a substantial speedup. <strong class="lede">But for our task, it was still not enough.</strong></p>
+          <p>Early break gives a substantial speedup. <strong class="lede">But for our task, it was still not enough.</strong></p>
 
 <pre><code>directedHausdorffEarlyBreak(A, B):
     maxMin = 0
@@ -97,58 +101,58 @@
         maxMin = max(maxMin, minDist)
     return maxMin</code></pre>
 
-      <h2>Shuffling + early break</h2>
+          <h2>Shuffling + early break</h2>
 
-      <p>Another known idea is to change the traversal order of the points, for example by randomly shuffling contours <code>A</code> and <code>B</code>.</p>
+          <p>Another known idea is to change the traversal order of the points, for example by randomly shuffling contours <code>A</code> and <code>B</code>.</p>
 
-      <p>The intuition is simple: if we visit points in a different order, we may encounter a point that triggers the early break sooner. This can be especially helpful in later iterations, when finding a distance below the current threshold may otherwise require scanning almost the whole contour.</p>
+          <p>The intuition is simple: if we visit points in a different order, we may encounter a point that triggers the early break sooner. This can be especially helpful in later iterations, when finding a distance below the current threshold may otherwise require scanning almost the whole contour.</p>
 
-      <p>This approach often works well for very different shapes. But it has a cost: it requires additional memory for shuffled contours, extra work for the shuffle itself, and less predictable running time because the number of checks depends on the random traversal order.</p>
+          <p>This approach often works well for very different shapes. But it has a cost: it requires additional memory for shuffled contours, extra work for the shuffle itself, and less predictable running time because the number of checks depends on the random traversal order.</p>
 
-      <p>A similar idea is used, for example, in SciPy’s <code>directed_hausdorff</code>, where points are randomly shuffled to improve the efficiency of early termination.</p>
+          <p>A similar idea is used, for example, in SciPy’s <code>directed_hausdorff</code>, where points are randomly shuffled to improve the efficiency of early termination.</p>
 
-      <figure class="figure">
-        <img src="images/figure4_shuffle_early_break.gif" alt="Shuffling with early break visualization">
-        <figcaption>Figure 4. Shuffling + early break: random traversal order can help find an early-break candidate sooner.</figcaption>
-      </figure>
+          <figure class="figure">
+              <img src="images/figure4_shuffle_early_break.gif" alt="Shuffling with early break visualization">
+              <figcaption>Figure 4. Shuffling + early break: random traversal order can help find an early-break candidate sooner.</figcaption>
+          </figure>
 
-      <p><a href="visualizations/hausdorff_shuffle_early_stop.html">Interactive shuffle + early break visualization on GitHub</a></p>
+          <p><a href="visualizations/hausdorff_shuffle_early_stop.html">Interactive shuffle + early break visualization on GitHub</a></p>
 
-      <p><strong class="lede">For our task, the final speed, including memory allocation and shuffling overhead, was still not good enough for release.</strong class="lede"></p>
+          <p><strong class="lede">For our task, the final speed, including memory allocation and shuffling overhead, was still not good enough for release.</strong></p>
 
-      <h2>KD-tree baseline</h2>
+          <h2>KD-tree baseline</h2>
 
-      <p>Another natural way to speed up Hausdorff distance is to use a KD-tree.</p>
+          <p>Another natural way to speed up Hausdorff distance is to use a KD-tree.</p>
 
-      <p>The idea is to avoid scanning all points of contour <code>B</code> for every point <code>A[i]</code>. Instead, we first build a spatial index over the points of <code>B</code>. A spatial index is a data structure for faster coordinate-based search. In the case of a KD-tree, points are recursively split by <code>x</code>, then by <code>y</code>, then by <code>x</code> again, and so on, forming a tree.</p>
+          <p>The idea is to avoid scanning all points of contour <code>B</code> for every point <code>A[i]</code>. Instead, we first build a spatial index over the points of <code>B</code>. A spatial index is a data structure for faster coordinate-based search. In the case of a KD-tree, points are recursively split by <code>x</code>, then by <code>y</code>, then by <code>x</code> again, and so on, forming a tree.</p>
 
-      <p>After that, the nearest neighbor for <code>A[i]</code> can be found by walking through the tree and pruning regions where a closer point cannot exist.</p>
+          <p>After that, the nearest neighbor for <code>A[i]</code> can be found by walking through the tree and pruning regions where a closer point cannot exist.</p>
 
-      <p>
-          Building the tree takes about <code>O(m * log m)</code> and requires additional memory <code>O(m)</code>. In good cases, nearest-neighbor search is much faster than brute force and is often close to <code>O(log m)</code>. So the directed Hausdorff distance may look like:
+          <p>
+              Building the tree takes about <code>O(m * log m)</code> and requires additional memory <code>O(m)</code>. In good cases, nearest-neighbor search is much faster than brute force and is often close to <code>O(log m)</code>. So the directed Hausdorff distance may look like:
 
-          <code>O(m * log m + n * log m)</code> in good cases, which is much better on paper than the <code>O(n * m)</code> worst case of the previously discussed methods.
-      </p>
+              <code>O(m * log m + n * log m)</code> in good cases, which is much better on paper than the <code>O(n * m)</code> worst case of the previously discussed methods.
+          </p>
 
-      <figure class="figure">
-        <img src="images/figure5_kdtree.gif" alt="KD-tree baseline visualization">
-        <figcaption>Figure 5. KD-tree baseline: tree construction and nearest-neighbor search.</figcaption>
-      </figure>
+          <figure class="figure">
+              <img src="images/figure5_kdtree.gif" alt="KD-tree baseline visualization">
+              <figcaption>Figure 5. KD-tree baseline: tree construction and nearest-neighbor search.</figcaption>
+          </figure>
 
-      <p><a href="visualizations/kdtree_contour_build_search.html">Interactive KD-tree build/search visualization on GitHub</a></p>
+          <p><a href="visualizations/kdtree_contour_build_search.html">Interactive KD-tree build/search visualization on GitHub</a></p>
 
-      <p>But there are two important caveats:</p>
+          <p>But there are two important caveats:</p>
 
-      <ul>
-        <li><strong>First, nearest-neighbor search in a KD-tree does not have the same simple <code>O(log m)</code> guarantee as key lookup in an ordinary balanced tree.</strong> During search, the algorithm first descends into the most promising branch, but it may still need to check neighboring branches: a closer point may be hiding on the other side of a split line.</li>
-        <p>On favorable data, the tree prunes many regions and search is close to <code>O(log m)</code>. On unfavorable data, pruning may be weak: points may be distributed awkwardly, the tree may be poorly balanced, the query point may lie close to split boundaries, or the nearest neighbor may be across several split lines. Then the algorithm may need to visit many nodes, and in the worst case almost all points.</p>
-        <p>Contour points may be a less convenient case for KD-trees: they lie on a thin curve in 2D space instead of filling the area uniformly. Because of that, geometrically close points can end up on different sides of split lines, and exact search may need to inspect more neighboring branches.</p>
-<li><strong>Second, practical KD-tree implementations often use approximate nearest-neighbor search for speed.</strong> In that case, not all potentially relevant branches are checked. The nearest neighbor may be approximate rather than exact. This is acceptable for many tasks, but for defect detection I needed exact Hausdorff distance.</li>
-      </ul>
+          <ul>
+              <li><strong>First, nearest-neighbor search in a KD-tree does not have the same simple <code>O(log m)</code> guarantee as key lookup in an ordinary balanced tree.</strong> During search, the algorithm first descends into the most promising branch, but it may still need to check neighboring branches: a closer point may be hiding on the other side of a split line.</li>
+              <p>On favorable data, the tree prunes many regions and search is close to <code>O(log m)</code>. On unfavorable data, pruning may be weak: points may be distributed awkwardly, the tree may be poorly balanced, the query point may lie close to split boundaries, or the nearest neighbor may be across several split lines. Then the algorithm may need to visit many nodes, and in the worst case almost all points.</p>
+              <p>Contour points may be a less convenient case for KD-trees: they lie on a thin curve in 2D space instead of filling the area uniformly. Because of that, geometrically close points can end up on different sides of split lines, and exact search may need to inspect more neighboring branches.</p>
+              <li><strong>Second, practical KD-tree implementations often use approximate nearest-neighbor search for speed.</strong> In that case, not all potentially relevant branches are checked. The nearest neighbor may be approximate rather than exact. This is acceptable for many tasks, but for defect detection I needed exact Hausdorff distance.</li>
+          </ul>
 
-      <p>In practice, this confirmed my suspicion: tree construction added noticeable overhead, and approximate nearest-neighbor search affected accuracy. For defect detection, even small differences in the final Hausdorff distance were not acceptable.</p>
+          <p>In practice, this confirmed my suspicion: tree construction added noticeable overhead, and approximate nearest-neighbor search affected accuracy. For defect detection, even small differences in the final Hausdorff distance were not acceptable.</p>
 
-      <strong class="lede"> As a result, the KD-tree baseline was significantly worse than shuffling + early break for my use case.</strong>
+          <strong class="lede"> As a result, the KD-tree baseline was significantly worse than shuffling + early break for my use case.</strong>
 
           <h2>The key observation</h2>
 
@@ -590,7 +594,7 @@
               <p><strong>Code, test images, benchmarks, and visualizations are available in the GitHub repository:</strong></p>
               <p><a href="https://github.com/Kate-droid-cpu/contour-coherent-hausdorff">https://github.com/Kate-droid-cpu/contour-coherent-hausdorff</a></p>
           </div>
-</article>
+      </article>
   </main>
 </body>
 </html>

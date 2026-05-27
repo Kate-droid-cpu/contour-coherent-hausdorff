@@ -184,6 +184,12 @@ h1 {
   margin: 0 0 18px;
 }
 
+.article-meta {
+    color: var(--muted);
+    font-size: 0.98rem;
+    margin: -8px 0 28px;
+}
+
 .lede {
   font-size: 1.12rem;
   font-style: italic;
