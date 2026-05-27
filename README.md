@@ -1,5 +1,7 @@
-# Contour-Coherent Hausdorff Distance
+📖 Read the full article:  
+https://kate-droid-cpu.github.io/contour-coherent-hausdorff/article.html
 
+# Contour-Coherent Hausdorff Distance
 
 Fast exact discrete Hausdorff distance for ordered contours.
 
