@@ -11,9 +11,13 @@ This folder contains small demo image sets used by the benchmark scripts.
 
 
 \- `WalkingSilhouette/` — synthetic/generated contour sequence for testing related ordered contours.
+
 \- `SmallContoursDefects/` — synthetic/generated contour sequence for testing related ordered contours.
+
 \- `SmallDeformations/` — synthetic/generated contour sequence for testing related ordered contours.
+
 \- `SyntheticDefects/` — synthetic/generated contour sequence for testing related ordered contours.
+
 \- `snowflake/` — synthetic/generated complex contours for stress-testing large contour shapes.
 
 
