@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Speeding Up Exact Hausdorff Distance by 10x+ on Ordered Contours</title>
+  <meta name="description" content="A contour-coherent optimization for exact Hausdorff distance on ordered contours.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav">
+      <a class="brand" href="index.html">Contour-Coherent Hausdorff</a>
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="https://github.com/Kate-droid-cpu/contour-coherent-hausdorff">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="container">
+    <article class="article">
+      <p class="eyebrow">Exact Hausdorff distance • C++ • ordered contours</p>
+      <h1>Speeding Up Exact Hausdorff Distance by 10x+ on Ordered Contours</h1>
+
+      <p class="lede">While implementing a new C++ algorithm for defect detection, I ran into a performance problem: we needed to compute the Hausdorff distance between contours many times.</p>
+
+      <p class="lede">The contours were ordered sequences of points extracted from binary images. The task involved comparing many contours and grouping similar ones based on the Hausdorff distance.</pclass="lede">
+
+      <p class="lede">Before getting to the optimization I ended up using, let’s briefly recall how Hausdorff distance is computed and what common optimizations already exist.</p>
+
+      <h2>Classic Hausdorff distance: brute force</h2>
+
+      <p>Suppose we have two contours, <code>A</code> and <code>B</code>. For each point <code>A[i]</code>, we find the closest point in contour <code>B</code>. Let that point be <code>B[j]</code>. Then:</p>
+
+<pre><code>D[i] = distance(A[i], B[j])</code></pre>
+
+      <p>After computing all these minimal distances, we take the maximum:</p>
+
+<pre><code>h(A, B) = max(D[0] ... D[n - 1])</code></pre>
+
+      <p>This is the directed Hausdorff distance. In general, <code>h(A, B)</code> can differ from <code>h(B, A)</code>, so the symmetric Hausdorff distance is usually computed as:</p>
+
+<pre><code>H(A, B) = max(h(A, B), h(B, A))</code></pre>
+
+      <figure class="figure figure-small">
+        <img src="images/figure1_directed_hausdorff.png" alt="Directed Hausdorff distances h(A, B) and h(B, A)">
+        <figcaption>Figure 1. Directed Hausdorff distances <code>h(A, B)</code> and <code>h(B, A)</code>.</figcaption>
+      </figure>
+
+      <p>The naive implementation follows the definition directly: for each point of the first contour, scan all points of the second contour. If the contour sizes are <code>n</code> and <code>m</code>, one directed pass takes <code>O(n * m)</code>, and the symmetric distance requires two such passes.</p>
+
+      <figure class="figure">
+        <img src="images/figure2_bruteforce.gif" alt="Classic brute-force traversal visualization">
+        <figcaption>Figure 2. Classic brute-force traversal: for each point <code>A[i]</code>, all points of <code>B</code> are checked.</figcaption>
+      </figure>
+
+      <p><a href="visualizations/hausdorff_bruteforce_no_stop.html">Interactive brute force visualization on GitHub</a></p>
+
+      <p>The brute-force approach is simple and exact. But as soon as contours contain many points and we compare many contour pairs, it becomes expensive. <strong class="lede">For our task, it was too expensive.</strong class="lede"></p>
+
+<pre><code>directedHausdorff(A, B):
+    maxMin = 0
+    for a in A:
+        minDist = infinity
+        for b in B:
+            minDist = min(minDist, distance(a, b))
+        maxMin = max(maxMin, minDist)
+    return maxMin</code></pre>
+
+      <h2>Brute force with early break</h2>
+
+      <p>If we need the exact maximum distance, we can still apply a common early-break optimization.</p>
+
+      <p>During the inner loop, if the current <code>minDist</code> for <code>A[i]</code> has already become less than or equal to the current <code>maxMin</code>, then this point <code>A[i]</code> cannot increase the final directed Hausdorff distance anymore. So we can stop checking the remaining points of <code>B</code> for this <code>A[i]</code>.</p>
+
+      <p>This does not change the result. The distance remains exact. We simply stop checking candidates that are already guaranteed not to affect the final maximum.</p>
+
+      <figure class="figure">
+        <img src="images/figure3_early_break.gif" alt="Brute force with early break visualization">
+        <figcaption>Figure 3. Brute force + early break: the inner loop stops once the current point can no longer increase <code>maxMin</code>.</figcaption>
+      </figure>
+
+      <p><a href="visualizations/hausdorff_bruteforce_viz.html">Interactive brute force + early break visualization on GitHub</a></p>
+
+      <p>Early break gives a substantial speedup. <strong class="lede">But for our task, it was still not enough.</strong></p>
+
+<pre><code>directedHausdorffEarlyBreak(A, B):
+    maxMin = 0
+    for a in A:
+        minDist = infinity
+        for b in B:
+            d = distance(a, b)
+            minDist = min(minDist, d)
+            if minDist &lt;= maxMin:
+                break
+        maxMin = max(maxMin, minDist)
+    return maxMin</code></pre>
+
+      <h2>Shuffling + early break</h2>
+
+      <p>Another known idea is to change the traversal order of the points, for example by randomly shuffling contours <code>A</code> and <code>B</code>.</p>
+
+      <p>The intuition is simple: if we visit points in a different order, we may encounter a point that triggers the early break sooner. This can be especially helpful in later iterations, when finding a distance below the current threshold may otherwise require scanning almost the whole contour.</p>
+
+      <p>This approach often works well for very different shapes. But it has a cost: it requires additional memory for shuffled contours, extra work for the shuffle itself, and less predictable running time because the number of checks depends on the random traversal order.</p>
+
+      <p>A similar idea is used, for example, in SciPy’s <code>directed_hausdorff</code>, where points are randomly shuffled to improve the efficiency of early termination.</p>
+
+      <figure class="figure">
+        <img src="images/figure4_shuffle_early_break.gif" alt="Shuffling with early break visualization">
+        <figcaption>Figure 4. Shuffling + early break: random traversal order can help find an early-break candidate sooner.</figcaption>
+      </figure>
+
+      <p><a href="visualizations/hausdorff_shuffle_early_stop.html">Interactive shuffle + early break visualization on GitHub</a></p>
+
+      <p><strong class="lede">For our task, the final speed, including memory allocation and shuffling overhead, was still not good enough for release.</strong class="lede"></p>
+
+      <h2>KD-tree baseline</h2>
+
+      <p>Another natural way to speed up Hausdorff distance is to use a KD-tree.</p>
+
+      <p>The idea is to avoid scanning all points of contour <code>B</code> for every point <code>A[i]</code>. Instead, we first build a spatial index over the points of <code>B</code>. A spatial index is a data structure for faster coordinate-based search. In the case of a KD-tree, points are recursively split by <code>x</code>, then by <code>y</code>, then by <code>x</code> again, and so on, forming a tree.</p>
+
+      <p>After that, the nearest neighbor for <code>A[i]</code> can be found by walking through the tree and pruning regions where a closer point cannot exist.</p>
+
+      <p>
+          Building the tree takes about <code>O(m * log m)</code> and requires additional memory <code>O(m)</code>. In good cases, nearest-neighbor search is much faster than brute force and is often close to <code>O(log m)</code>. So the directed Hausdorff distance may look like:
+
+          <code>O(m * log m + n * log m)</code> in good cases, which is much better on paper than the <code>O(n * m)</code> worst case of the previously discussed methods.
+      </p>
+
+      <figure class="figure">
+        <img src="images/figure5_kdtree.gif" alt="KD-tree baseline visualization">
+        <figcaption>Figure 5. KD-tree baseline: tree construction and nearest-neighbor search.</figcaption>
+      </figure>
+
+      <p><a href="visualizations/kdtree_contour_build_search.html">Interactive KD-tree build/search visualization on GitHub</a></p>
+
+      <p>But there are two important caveats:</p>
+
+      <ul>
+        <li><strong>First, nearest-neighbor search in a KD-tree does not have the same simple <code>O(log m)</code> guarantee as key lookup in an ordinary balanced tree.</strong> During search, the algorithm first descends into the most promising branch, but it may still need to check neighboring branches: a closer point may be hiding on the other side of a split line.</li>
+        <p>On favorable data, the tree prunes many regions and search is close to <code>O(log m)</code>. On unfavorable data, pruning may be weak: points may be distributed awkwardly, the tree may be poorly balanced, the query point may lie close to split boundaries, or the nearest neighbor may be across several split lines. Then the algorithm may need to visit many nodes, and in the worst case almost all points.</p>
+        <p>Contour points may be a less convenient case for KD-trees: they lie on a thin curve in 2D space instead of filling the area uniformly. Because of that, geometrically close points can end up on different sides of split lines, and exact search may need to inspect more neighboring branches.</p>
+<li><strong>Second, practical KD-tree implementations often use approximate nearest-neighbor search for speed.</strong> In that case, not all potentially relevant branches are checked. The nearest neighbor may be approximate rather than exact. This is acceptable for many tasks, but for defect detection I needed exact Hausdorff distance.</li>
+      </ul>
+
+      <p>In practice, this confirmed my suspicion: tree construction added noticeable overhead, and approximate nearest-neighbor search affected accuracy. For defect detection, even small differences in the final Hausdorff distance were not acceptable.</p>
+
+      <strong class="lede"> As a result, the KD-tree baseline was significantly worse than shuffling + early break for my use case.</strong>
+
+          <h2>The key observation</h2>
+
+          <p class="lede">So we ended up in an interesting situation.</p>
+
+          <p class="lede">Brute force was too expensive. Early break helped, but still checked points in a fixed order. Shuffling helped early break, but required extra memory and extra work. KD-tree sped up nearest-neighbor search in a general sense, but required an additional data structure and did not use the order of contour points.</p>
+
+          <p><strong class="lede">But in our task, the points were already ordered.</strong></p>
+
+          <p class="lede">If <code>A[i]</code> corresponds to some point <code>B[j]</code>, then for the next point <code>A[i + 1]</code>, the nearest point is often somewhere near <code>B[j]</code>, not at a completely arbitrary location on the contour.</p>
+
+          <p class="lede">This observation led to the main optimization.</p>
+
+          <h2>The new contour-coherent optimization</h2>
+
+          <p>The main idea is: for each point <code>A[i]</code>, we do not start the search from index <code>0</code> in contour <code>B</code>. Instead, we start from:</p>
+
+<pre><code>startPoint = closestPrevious + 1</code></pre>
+
+          <p>where <code>closestPrevious</code> is the point in contour <code>B</code> found on the previous iteration for <code>A[i - 1]</code>.</p>
+
+          <p>The distance from <code>A[i - 1]</code> to <code>B[closestPrevious]</code> is either the current <code>maxMin</code>, or smaller if the previous iteration ended early.</p>
+
+          <p>Then we scan points on contour <code>B</code> to the left and to the right of <code>startPoint</code>, in this order:</p>
+
+<pre><code>startPoint, startPoint - 1, startPoint + 1, startPoint - 2, startPoint + 2, ...</code></pre>
+
+          <p>If one direction reaches the boundary, we continue only in the opposite direction.</p>
+
+          <p>The goal is to trigger the early break earlier. We do not build a tree, we do not allocate additional shuffled arrays, and we do not change the exact result. We simply traverse <code>B</code> in a better order.</p>
+
+          <figure class="figure">
+              <img src="images/figure6_contour_coherent.gif" alt="Contour-coherent traversal visualization">
+              <figcaption>Figure 6. Contour-coherent traversal: search starts near the previous <code>bestIndex</code>.</figcaption>
+          </figure>
+
+          <p><a href="visualizations/contour_coherent_search.html">Interactive contour-coherent visualization on GitHub</a></p>
+
+          <p>The visualization shows that on “descents” and after the global <code>maxMin</code>, many iterations behave almost like constant-time operations in terms of distance checks.</p>
+
+<pre><code>directedHausdorffContourCoherent(A, B):
+    maxMin = 0
+    startIndex = 0
+
+    for i in 0 .. A.size - 1:
+        minDist = infinity
+        bestIndex = startIndex
+
+        for j in indicesAround(startIndex, B.size):
+            d = distance(A[i], B[j])
+
+            if d &lt; minDist:
+                minDist = d
+                bestIndex = j
+
+            if minDist &lt;= maxMin:
+                break
+
+        maxMin = max(maxMin, minDist)
+        startIndex = bestIndex + 1
+
+    return maxMin</code></pre>
+
+          <p><code>indicesAround(startIndex, size)</code> returns indices in this order:</p>
+
+<pre><code>startIndex, startIndex - 1, startIndex + 1, startIndex - 2, startIndex + 2, ...</code></pre>
+
+          <p class="lede">Obvious and simple? Very much so.</p>
+
+          <p class="lede">I implemented it, tested it locally on small packages, and the result looked excellent. The next day, testers were surprised: the performance problem had disappeared. The speedup was more than 10x.</p>
+
+          <p class="lede">I searched for this exact optimization but could not find it. So I thought: maybe it could be useful beyond this specific task? I wrote benchmarks and tested it on different image datasets.</p>
+
+          <h2>How the tests were performed</h2>
+
+          <h3>Image packages</h3>
+          <p>The tests used binary images with a foreground object and a background. Some images were generated, and some came from standard Computer Vision datasets, such as MPEG7, Kimia99, and Kimia216. The tables below show a subset of the results, chosen to demonstrate the general behavior of the algorithms on different types of contours.</p>
+
+          <h3>Preprocessing: contour extraction</h3>
+          <p>For each image, a contour was extracted using OpenCV <code>findContours</code> with <code>CHAIN_APPROX_NONE</code>, meaning the contour was not simplified. If multiple contours were found, the largest contour was selected for the benchmark.</p>
+
+          <h3>Hausdorff distance computation</h3>
+          <p>Inside each dataset, all contours were compared pairwise. For all exact algorithms, I used the same extracted contours and the same distance function. The tables below use the Euclidean metric.</p>
+
+          <p>Compared algorithms:</p>
+          <ul>
+              <li>Contour-Coherent - the new optimization;</li>
+              <li>Shuffling + early break;</li>
+              <li>Brute force + early break;</li>
+              <li>Boost.Geometry - mostly as a reference implementation for correctness;</li>
+              <li>KD-tree - tree construction using OpenCV FLANN.</li>
+          </ul>
+
+          <p>For Contour-Coherent, Shuffling + early break, and Brute force + early break, I added a <code>checks</code> counter. A check means one distance computation between two points. It is not the full runtime, but it is a useful measure of the main algorithmic work. Runtime also depends on allocations, cache behavior, shuffling overhead, auxiliary structures, and implementation details.</p>
+
+          <h3>Benchmarks</h3>
+          <p>The benchmark measured median time for processing all contour pairs in the package, average time for processing the package, median time per Hausdorff distance, total number of checks in the package, average number of checks per pair, and average Hausdorff distance used as a correctness check.</p>
+
+          <h2>Results: where the method works best</h2>
+
+          <h3>1. Best case: very close contours</h3>
+          <p>This is the scenario closest to the original task: defect search and small local differences. The contours are geometrically close, local differences are small, and the overall point order is preserved.</p>
+          <p>Examples: <code>WalkingSilhouette</code>, <code>SmallDeformations</code>, <code>SyntheticDefects</code>, <code>SmallContoursDefects</code>.</p>
+          <p>Here the speedup was about <code>2.2x</code> to <code>14.5x</code> compared with shuffling + early break, and more than <code>14x</code> to <code>77x</code> compared with brute force + early break.</p>
+
+          <h3>2. Good case: similar contours with larger differences</h3>
+          <p>Examples: <code>MPEG7/children</code>, <code>MPEG7/chopper</code>, <code>MPEG7/car</code>.</p>
+          <p>Here the speedup was about <code>1.3x</code> to <code>5x</code> compared with shuffling + early break, and about <code>10x</code> to <code>12x</code> compared with brute force + early break.</p>
+
+          <h3>3. Complex but still suitable case</h3>
+          <p>Some contours have similar structure but complex geometry. For example, snowflakes or other detailed shapes.</p>
+          <p>If point order still preserves locality, the contour-coherent approach works well. On the <code>Snowflake</code> dataset, the speedup was about <code>2.5x</code> compared with shuffling + early break and about <code>170x</code> compared with brute force + early break. In such cases, if the traversal order is bad, the cost can become catastrophic.</p>
+
+          <h2>Where the algorithm was less successful</h2>
+
+          <ul>
+              <li>On mixed or less consistent datasets, such as <code>MPEG7/phone</code>, <code>Kimia99</code>, and <code>Kimia216</code>, shuffling + early break was sometimes more successful. Still, contour-coherent traversal remained about <code>3x</code> to <code>7x</code> faster than brute force + early break.</li>
+              <li>For very different contours, for example <code>MPEG7/Mix</code>, shuffling + early break was about <code>4x</code> faster. But even there, contour-coherent traversal remained about <code>3x</code> faster than brute force + early break. This is an important limitation: if the nearest point for <code>A[i + 1]</code> is often not near the <code>bestIndex</code> from the previous iteration, the advantage of contour-coherent traversal decreases.</li>
+          </ul>
+
+          <p class="note"><strong>CC</strong> = Contour-Coherent, <strong>BF+EB</strong> = brute force + early break. Green cells show cases where contour-coherent wins. Orange cells show cases where shuffling + early break is faster.</p>
+
+          <div class="table-wrap">
+              <table>
+                  <caption>Table 1. Median time for processing all contour pairs in the package, ms</caption>
+                  <thead>
+                      <tr>
+                          <th>Batch</th>
+                          <th class="num">Avg HD, px</th>
+                          <th class="num">CC, ms</th>
+                          <th class="num">Shuffle, ms</th>
+                          <th class="num">BF+EB, ms</th>
+                          <th class="num">CC vs Shuffle</th>
+                          <th class="num">CC vs BF+EB</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+
+                      <tr>
+                          <td>WalkingSilhouette (20 contours, 4410-4430 points)</td>
+                          <td class="num">14.56</td>
+                          <td class="num">58.01</td>
+                          <td class="num">839.01</td>
+                          <td class="num">4514.66</td>
+                          <td class="num win-strong">14.46x</td>
+                          <td class="num win-strong">77.8x</td>
+                      </tr>
+
+                      <tr>
+                          <td>SmallDeformations (20 contours, 2826-2882 points)</td>
+                          <td class="num">24.64</td>
+                          <td class="num">51.06</td>
+                          <td class="num">124.48</td>
+                          <td class="num">1664.24</td>
+                          <td class="num win">2.44x</td>
+                          <td class="num win-strong">32.60x</td>
+                      </tr>
+
+                      <tr>
+                          <td>SyntheticDefects (20 contours, 970-1032 points)</td>
+                          <td class="num">18.13</td>
+                          <td class="num">12.95</td>
+                          <td class="num">28.60</td>
+                          <td class="num">208.38</td>
+                          <td class="num win">2.21x</td>
+                          <td class="num win-strong">16.09x</td>
+                      </tr>
+
+                      <tr>
+                          <td>SmallContoursDefects (20 contours, 274-280 points)</td>
+                          <td class="num">3.32</td>
+                          <td class="num">1.15</td>
+                          <td class="num">8.37</td>
+                          <td class="num">16.15</td>
+                          <td class="num win-strong">7.29x</td>
+                          <td class="num win-strong">14.06x</td>
+                      </tr>
+
+                      <tr>
+                          <td>Snowflake (12 contours, 23512-28171 points)</td>
+                          <td class="num">55.31</td>
+                          <td class="num">247.73</td>
+                          <td class="num">598.25</td>
+                          <td class="num">42546.30</td>
+                          <td class="num win">2.41x</td>
+                          <td class="num win-strong">171.7x</td>
+                      </tr>
+
+                      <tr>
+                          <td>MPEG7/children (20 contours, 387-390 points)</td>
+                          <td class="num">4.22</td>
+                          <td class="num">3.29</td>
+                          <td class="num">14.73</td>
+                          <td class="num">33.06</td>
+                          <td class="num win">4.48x</td>
+                          <td class="num win-strong">10.1x</td>
+                      </tr>
+
+                      <tr>
+                          <td>MPEG7/chopper (20 contours, 637-831 points)</td>
+                          <td class="num">19.94</td>
+                          <td class="num">8.55</td>
+                          <td class="num">15.93</td>
+                          <td class="num">97.50</td>
+                          <td class="num win">1.86x</td>
+                          <td class="num win-strong">11.4x</td>
+                      </tr>
+
+                      <tr>
+                          <td>MPEG7/car (20 contours, 406-558 points)</td>
+                          <td class="num">27.68</td>
+                          <td class="num">6.78</td>
+                          <td class="num">9.17</td>
+                          <td class="num">46.07</td>
+                          <td class="num win">1.35x</td>
+                          <td class="num win">6.8x</td>
+                      </tr>
+
+                      <tr>
+                          <td>MPEG7/phone (20 contours, 790-1102 points)</td>
+                          <td class="num">48.17</td>
+                          <td class="num">24.98</td>
+                          <td class="num">16.89</td>
+                          <td class="num">171.52</td>
+                          <td class="num loss">0.68x</td>
+                          <td class="num win">6.9x</td>
+                      </tr>
+
+                      <tr>
+                          <td>MPEG7/Mix (20 contours, 336-1960 points)</td>
+                          <td class="num">268.55</td>
+                          <td class="num">77.03</td>
+                          <td class="num">17.68</td>
+                          <td class="num">247.66</td>
+                          <td class="num loss">0.23x</td>
+                          <td class="num win">3.2x</td>
+                      </tr>
+
+                      <tr>
+                          <td>Kimia99 (99 contours, 125-605 points)</td>
+                          <td class="num">41.1</td>
+                          <td class="num">124.26</td>
+                          <td class="num">118.84</td>
+                          <td class="num">488.57</td>
+                          <td class="num loss-soft">0.96x</td>
+                          <td class="num win">3.9x</td>
+                      </tr>
+
+                      <tr>
+                          <td>Kimia216 (216 contours, 245-675 points)</td>
+                          <td class="num">48.72</td>
+                          <td class="num">797.72</td>
+                          <td class="num">570.33</td>
+                          <td class="num">2670.93</td>
+                          <td class="num loss">0.71x</td>
+                          <td class="num win">3.3x</td>
+                      </tr>
+                  </tbody>
+              </table>
+          </div>
+
+          <div class="table-wrap">
+              <table>
+                  <caption>Table 2. Average distance checks per symmetric Hausdorff distance</caption>
+                  <thead>
+                      <tr>
+                          <th>Batch</th>
+                          <th class="num">CC checks</th>
+                          <th class="num">Shuffle checks</th>
+                          <th class="num">BF+EB checks</th>
+                          <th class="num">Checks saved vs Shuffle</th>
+                          <th class="num">Checks saved vs BF+EB</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+
+                      <tr>
+                          <td>WalkingSilhouette</td>
+                          <td class="num">216.1k</td>
+                          <td class="num">3460.8k</td>
+                          <td class="num">19561.5k</td>
+                          <td class="num win-strong">16.02x</td>
+                          <td class="num win-strong">90.5x</td>
+                      </tr>
+
+                      <tr>
+                          <td>SmallDeformations</td>
+                          <td class="num">225.9k</td>
+                          <td class="num">498.5k</td>
+                          <td class="num">7984.5k</td>
+                          <td class="num win">2.21x</td>
+                          <td class="num win-strong">35.35x</td>
+                      </tr>
+
+                      <tr>
+                          <td>SyntheticDefects</td>
+                          <td class="num">52.7k</td>
+                          <td class="num">102.9k</td>
+                          <td class="num">993.5k</td>
+                          <td class="num win">1.95x</td>
+                          <td class="num win-strong">18.86x</td>
+                      </tr>
+
+                      <tr>
+                          <td>SmallContoursDefects</td>
+                          <td class="num">2.7k</td>
+                          <td class="num">29.9k</td>
+                          <td class="num">74.7k</td>
+                          <td class="num win-strong">10.96x</td>
+                          <td class="num win-strong">27.42x</td>
+                      </tr>
+
+                      <tr>
+                          <td>Snowflake</td>
+                          <td class="num">3270.1k</td>
+                          <td class="num">7513.8k</td>
+                          <td class="num">595772.5k</td>
+                          <td class="num win">2.30x</td>
+                          <td class="num win-strong">182.2x</td>
+                      </tr>
+
+                      <tr>
+                          <td>MPEG7/children</td>
+                          <td class="num">7.1k</td>
+                          <td class="num">57.6k</td>
+                          <td class="num">152.5k</td>
+                          <td class="num win-strong">8.17x</td>
+                          <td class="num win-strong">21.6x</td>
+                      </tr>
+
+                      <tr>
+                          <td>MPEG7/chopper</td>
+                          <td class="num">32.7k</td>
+                          <td class="num">50.4k</td>
+                          <td class="num">465.3k</td>
+                          <td class="num win">1.54x</td>
+                          <td class="num win-strong">14.2x</td>
+                      </tr>
+
+                      <tr>
+                          <td>MPEG7/car</td>
+                          <td class="num">24.3k</td>
+                          <td class="num">25.0k</td>
+                          <td class="num">213.7k</td>
+                          <td class="num win">1.03x</td>
+                          <td class="num win">8.8x</td>
+                      </tr>
+
+                      <tr>
+                          <td>MPEG7/phone</td>
+                          <td class="num">108.6k</td>
+                          <td class="num">47.7k</td>
+                          <td class="num">807.1k</td>
+                          <td class="num loss">0.44x</td>
+                          <td class="num win">7.4x</td>
+                      </tr>
+
+                      <tr>
+                          <td>MPEG7/Mix</td>
+                          <td class="num">346.4k</td>
+                          <td class="num">45.1k</td>
+                          <td class="num">1168.2k</td>
+                          <td class="num loss">0.23x</td>
+                          <td class="num win">3.4x</td>
+                      </tr>
+
+                      <tr>
+                          <td>Kimia99</td>
+                          <td class="num">18.0k</td>
+                          <td class="num">9.7k</td>
+                          <td class="num">87.6k</td>
+                          <td class="num loss">0.54x</td>
+                          <td class="num win">4.9x</td>
+                      </tr>
+
+                      <tr>
+                          <td>Kimia216</td>
+                          <td class="num">26.0k</td>
+                          <td class="num">10.3k</td>
+                          <td class="num">100.7k</td>
+                          <td class="num loss">0.39x</td>
+                          <td class="num win">3.9x</td>
+                      </tr>
+                  </tbody>
+              </table>
+          </div>
+
+          <h3>Why Boost.Geometry and KD-tree are not in the main tables</h3>
+
+          <p>I do not include Boost.Geometry and KD-tree/OpenCV FLANN as main baseline algorithms in the comparison tables for the following reasons.</p>
+
+          <p><strong>Boost.Geometry.</strong> I used Boost mainly as a reference implementation to verify correctness. It computes the same exact discrete Hausdorff distance, but it does not expose the number of distance checks, so it is not convenient for the <code>checks/HD</code> comparison. It was also noticeably slower than the other exact baselines, so I kept the main table focused on the more informative comparison: contour-coherent, shuffling + early break, and brute force + early break.</p>
+
+          <p><strong>KD-tree.</strong> KD-tree was used as a practical nearest-neighbor baseline. The implementation used OpenCV FLANN. In the end, its Avg HD value differed from the other algorithms, so this baseline was not strictly exact. For a defect-detection task, this is critical. In addition, in an all-pairs comparison, the tree has to be built many times. This adds overhead and requires extra memory. As a result, this baseline was also slower than the algorithms included in the main table.</p>
+
+          <p>Both baselines are implemented in the GitHub project and can be run together with the other algorithms.</p>
+
+          <h2>Summary of results</h2>
+
+          <p>The Contour-Coherent algorithm not only passed a real-world “battle test” in a high-load application but also performed well on different image datasets.</p>
+
+          <ul>
+              <li>On close and similar contours, it gives a stable speedup over shuffle: from <code>1.3x</code> to <code>14x</code> in runtime. Compared with BF + early break, the win is even larger: from <code>6.8x</code> to <code>171x</code> in runtime and from <code>8.8x</code> to <code>182x</code> in distance checks.</li>
+              <li>On non-target data, the result is weaker, as expected: if contours are very different or local correspondence between neighboring points breaks down, shuffling + early break may be faster. But even in these cases, contour-coherent traversal remained faster than BF + early break.</li>
+          </ul>
+
+          <h2>Time complexity</h2>
+
+          <p>In the worst case, the contour-coherent algorithm does not change the asymptotic complexity: directed Hausdorff distance may still require <code>O(n * m)</code> checks, and the symmetric distance requires two such passes.</p>
+
+          <p>This is expected. The algorithm does not build a spatial index, does not use a lower bound to eliminate entire regions, and does not mathematically discard candidates. It remains an exact algorithm and only changes the traversal order of points in <code>B</code> so that early break is triggered sooner.</p>
+
+          <p>But on suitable contours, the practical behavior is very different.</p>
+
+          <p>If neighboring points in <code>A</code> usually correspond to neighboring or nearby points in <code>B</code>, then the nearest point for <code>A[i + 1]</code> is often near the <code>bestIndex</code> found for <code>A[i]</code>. So the search starts almost at the right place.</p>
+
+          <p>In such cases, the algorithm does not need to scan the whole contour <code>B</code>. It checks a few nearby candidates, the current <code>minDist</code> becomes less than or equal to the already found <code>maxMin</code>, and early break is triggered.</p>
+
+          <p>This is especially visible on “descents” after a local maximum distance. When <code>maxMin</code> is already large enough, for many subsequent points it is not necessary to find the true <code>minDist</code> all the way to the end. It is enough to quickly find any point <code>B[j]</code> whose distance is already below the current <code>maxMin</code>. After that, the current point <code>A[i]</code> is guaranteed not to increase the Hausdorff distance, and the inner loop stops.</p>
+
+          <p>After the dominant maximum Hausdorff distance for a pair of contours has been found, many subsequent iterations on similar contours start behaving almost like constant-time operations: a few checks around <code>startIndex</code>, then early break.</p>
+
+          <p>That is why I show <code>checks/HD</code> separately in the table. The formal worst-case complexity remains <code>O(n * m)</code>, but on data with good locality the actual number of distance checks drops sharply.</p>
+
+          <p>If the contour point order is shuffled or the contours are poorly aligned, the advantage decreases. In that case, the algorithm remains exact, but the number of checks may approach brute force + early break.</p>
+
+          <h2>Conclusions</h2>
+
+          <ul>
+              <li>The main practical observation is simple: an ordered contour is not just a set of points. The point order already contains useful geometric information, and we can use it.</li>
+              <li>The contour-coherent algorithm uses this information in a very cheap way. It does not build a KD-tree, does not allocate arrays for shuffling, does not change the result, and does not turn exact Hausdorff distance into an approximation. It simply starts searching near the location where the closest point was found on the previous iteration.</li>
+              <li>Across the tested datasets, the algorithm was always faster than ordinary brute force + early break. In the most suitable scenarios - close contours, small deformations, synthetic defects, walking silhouettes - the speedup was <code>14x</code> to <code>77x</code> in runtime compared with brute force + early break. On Snowflake, it reached <code>171x</code>, because the fixed traversal order was especially bad.</li>
+              <li>Compared with shuffling + early break, the result depends on the data. On close and consistent contours, contour-coherent traversal was about <code>2.2x</code> to <code>14.5x</code> faster in runtime. In terms of distance checks, the win on such datasets was about <code>2x</code> to <code>16x</code>, and almost <code>11x</code> on <code>SmallContoursDefects</code>. These are exactly the cases where point order helps predict where the nearest candidate is likely to be.</li>
+              <li>On mixed or poorly aligned datasets, shuffling + early break can be faster. This is expected: if the nearest point for <code>A[i + 1]</code> is often not near the <code>bestIndex</code> from the previous iteration, the contour-coherent assumption loses its main advantage. But even in these cases, contour-coherent traversal remained about <code>3x</code> to <code>7x</code> faster than ordinary brute force + early break.</li>
+              <li>This is not a universal algorithm for arbitrary point clouds. But for its class of tasks - similar ordered contours, local defects, small deformations, binary masks - contour-coherent traversal gives a rare combination: simple implementation, exact result, no additional data structure, and a large practical speedup.</li>
+          </ul>
+
+          <div id="repository" class="footer-card">
+              <p><strong>Code, test images, benchmarks, and visualizations are available in the GitHub repository:</strong></p>
+              <p><a href="https://github.com/Kate-droid-cpu/contour-coherent-hausdorff">https://github.com/Kate-droid-cpu/contour-coherent-hausdorff</a></p>
+          </div>
+</article>
+  </main>
+</body>
+</html>
